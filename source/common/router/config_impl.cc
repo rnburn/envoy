@@ -87,7 +87,7 @@ RouteEntryImplBase::RouteEntryImplBase(const VirtualHostImpl& vhost, const Json:
       path_redirect_(route.getString("path_redirect", "")), retry_policy_(route),
       rate_limit_policy_(route), shadow_policy_(route),
       priority_(ConfigUtility::parsePriority(route)),
-      request_headers_parser_(RequestHeaderParser::parse(route)),
+      request_headers_parser_(std::move(RequestHeaderParser::parse(route))),
       opaque_config_(parseOpaqueConfig(route)) {
 
   route.validateSchema(Json::Schema::ROUTE_ENTRY_CONFIGURATION_SCHEMA);
@@ -190,7 +190,7 @@ void RouteEntryImplBase::finalizeRequestHeaders(
     Http::HeaderMap& headers, const Http::AccessLog::RequestInfo& requestInfo) const {
   // Append user-specified request headers in the following order: route-level headers,
   // virtual host level headers and finally global connection manager level headers.
-  request_headers_parser_.evaluateRequestHeaders(headers, requestInfo, requestHeadersToAdd());
+  request_headers_parser_->evaluateRequestHeaders(headers, requestInfo, requestHeadersToAdd());
 
   vhost_.requestHeaderParser().evaluateRequestHeaders(headers, requestInfo,
                                                       vhost_.requestHeadersToAdd());
@@ -420,7 +420,7 @@ VirtualHostImpl::VirtualHostImpl(const Json::Object& virtual_host,
                                  Upstream::ClusterManager& cm, bool validate_clusters)
     : name_(virtual_host.getString("name")), rate_limit_policy_(virtual_host),
       global_route_config_(global_route_config),
-      request_headers_parser_(RequestHeaderParser::parse(virtual_host)) {
+      request_headers_parser_(std::move(RequestHeaderParser::parse(virtual_host))) {
 
   virtual_host.validateSchema(Json::Schema::VIRTUAL_HOST_CONFIGURATION_SCHEMA);
 
@@ -656,7 +656,7 @@ ConfigImpl::ConfigImpl(const Json::Object& config, Runtime::Loader& runtime,
           {Http::LowerCaseString(header->getString("key")), header->getString("value")});
     }
   }
-  request_headers_parser_ = RequestHeaderParser::parse(config);
+  request_headers_parser_ = std::move(RequestHeaderParser::parse(config));
 }
 
 } // namespace Router
