@@ -70,6 +70,15 @@ cc_library(
 )
 
 cc_library(
+    name = "opentracing",
+    srcs = ["thirdparty_build/lib/libopentracing.a"],
+    hdrs = glob([
+        "thirdparty_build/include/opentracing/**/*.h",
+    ]),
+    includes = ["thirdparty_build/include"],
+)
+
+cc_library(
     name = "nghttp2",
     srcs = ["thirdparty_build/lib/libnghttp2.a"],
     hdrs = glob(["thirdparty_build/include/nghttp2/**/*.h"]),
