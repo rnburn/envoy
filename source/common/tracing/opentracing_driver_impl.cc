@@ -32,6 +32,9 @@ void OpenTracingSpan::injectContext(Http::HeaderMap& request_headers) {
 SpanPtr OpenTracingSpan::spawnChild(const std::string& name, SystemTime start_time) {
   std::unique_ptr<opentracing::Span> ot_span = span_->tracer().StartSpan(
       name, {opentracing::ChildOf(&span_->context()), opentracing::StartTimestamp(start_time)});
+  if (ot_span == nullptr) {
+    return nullptr;
+  }
   return SpanPtr{new OpenTracingSpan(std::move(ot_span))};
 }
 
