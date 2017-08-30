@@ -1,8 +1,10 @@
 #pragma once
 
+#include <memory>
+
 #include "envoy/tracing/http_tracer.h"
 
-#include "opentracing/span.h"
+#include "opentracing/tracer.h"
 
 namespace Envoy {
 namespace Tracing {
@@ -26,6 +28,8 @@ public:
   // Tracer::TracingDriver
   SpanPtr startSpan(Http::HeaderMap& request_headers, const std::string& operation_name,
                     SystemTime start_time) override;
+
+  virtual const opentracing::Tracer& tracer() const = 0;
 };
 
 } // namespace Tracing
