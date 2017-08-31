@@ -57,16 +57,15 @@ cc_library(
 
 cc_library(
     name = "lightstep",
-    srcs = ["thirdparty_build/lib/liblightstep_core_cxx11.a"],
+    srcs = ["thirdparty_build/lib/liblightstep_tracer.a"],
     hdrs = glob([
         "thirdparty_build/include/lightstep/**/*.h",
-        "thirdparty_build/include/mapbox_variant/**/*.hpp",
-    ]) + [
-        "thirdparty_build/include/collector.pb.h",
-        "thirdparty_build/include/lightstep_carrier.pb.h",
-    ],
+    ]),
     includes = ["thirdparty_build/include"],
-    deps = [":protobuf"],
+    deps = [
+        ":protobuf", 
+        ":opentracing",
+    ],
 )
 
 cc_library(

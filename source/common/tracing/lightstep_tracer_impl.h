@@ -14,8 +14,6 @@
 #include "common/tracing/opentracing_driver_impl.h"
 #include "common/json/json_loader.h"
 
-#include "lightstep/carrier.h"
-#include "lightstep/tracer.h"
 #include "opentracing/tracer.h"
 #include "opentracing/noop.h"
 
@@ -39,8 +37,7 @@ struct LightstepTracerStats {
 class LightStepDriver : public OpenTracingDriver {
 public:
   LightStepDriver(const Json::Object& config, Upstream::ClusterManager& cluster_manager,
-                  Stats::Store& stats, ThreadLocal::SlotAllocator& tls, Runtime::Loader& runtime,
-                  std::unique_ptr<lightstep::TracerOptions> options);
+                  Stats::Store& stats, ThreadLocal::SlotAllocator& tls, Runtime::Loader& runtime);
 
   // Tracer::OpenTracingDriver
   const opentracing::Tracer& tracer() const override;
@@ -63,7 +60,6 @@ private:
   LightstepTracerStats tracer_stats_;
   ThreadLocal::SlotPtr tls_;
   Runtime::Loader& runtime_;
-  std::unique_ptr<lightstep::TracerOptions> options_;
 };
 
 } // Tracing
