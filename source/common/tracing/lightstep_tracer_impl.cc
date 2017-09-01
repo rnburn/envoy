@@ -15,13 +15,31 @@
 namespace Envoy {
 namespace Tracing {
 
+LightStepDriver::LightStepTransporter::LightStepTransporter(LightStepDriver& driver)
+  : driver_(driver) {}
+
+void LightStepDriver::LightStepTransporter::Send(
+    const google::protobuf::Message& /*request*/, google::protobuf::Message& response,
+    void (*on_success)(void* context), void (*on_failure)(std::error_code error, void* context),
+    void* context) {
+  on_success_callback_ = on_success;
+  on_failure_callback_ = on_failure;
+  active_response_ = &response;
+  active_context_ = context;
+}
+
+void LightStepDriver::LightStepTransporter::onSuccess(Http::MessagePtr&&) {}
+
+void LightStepDriver::LightStepTransporter::onFailure(Http::AsyncClient::FailureReason) {}
+
 LightStepDriver::TlsLightStepTracer::TlsLightStepTracer(
     std::shared_ptr<opentracing::Tracer>&& tracer, LightStepDriver& driver)
     : tracer_(std::move(tracer)), driver_(driver) {}
 
 LightStepDriver::LightStepDriver(const Json::Object& config,
                                  Upstream::ClusterManager& cluster_manager, Stats::Store& stats,
-                                 ThreadLocal::SlotAllocator& tls, Runtime::Loader& runtime)
+                                 ThreadLocal::SlotAllocator& tls, Runtime::Loader& runtime,
+                                 const lightstep::LightStepTracerOptions& /*options*/)
     : cm_(cluster_manager), tracer_stats_{LIGHTSTEP_TRACER_STATS(
                                 POOL_COUNTER_PREFIX(stats, "tracing.lightstep."))},
       tls_(tls.allocateSlot()), runtime_(runtime) {
