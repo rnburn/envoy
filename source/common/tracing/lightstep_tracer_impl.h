@@ -40,7 +40,7 @@ class LightStepDriver : public OpenTracingDriver {
 public:
   LightStepDriver(const Json::Object& config, Upstream::ClusterManager& cluster_manager,
                   Stats::Store& stats, ThreadLocal::SlotAllocator& tls, Runtime::Loader& runtime,
-                  const lightstep::LightStepTracerOptions& options);
+                  std::unique_ptr<lightstep::LightStepTracerOptions>&& options);
 
   // Tracer::OpenTracingDriver
   const opentracing::Tracer& tracer() const override;
@@ -92,6 +92,7 @@ private:
   LightstepTracerStats tracer_stats_;
   ThreadLocal::SlotPtr tls_;
   Runtime::Loader& runtime_;
+  std::unique_ptr<lightstep::LightStepTracerOptions> options_;
 };
 
 } // Tracing

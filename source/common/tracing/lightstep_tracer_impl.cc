@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <iostream>
 
 #include "common/common/base64.h"
 #include "common/grpc/common.h"
@@ -86,10 +87,10 @@ void LightStepDriver::TlsLightStepTracer::enableTimer() {
 LightStepDriver::LightStepDriver(const Json::Object& config,
                                  Upstream::ClusterManager& cluster_manager, Stats::Store& stats,
                                  ThreadLocal::SlotAllocator& tls, Runtime::Loader& runtime,
-                                 const lightstep::LightStepTracerOptions& options)
+                                 std::unique_ptr<lightstep::LightStepTracerOptions>&& options)
     : cm_(cluster_manager), tracer_stats_{LIGHTSTEP_TRACER_STATS(
                                 POOL_COUNTER_PREFIX(stats, "tracing.lightstep."))},
-      tls_(tls.allocateSlot()), runtime_(runtime) {
+      tls_(tls.allocateSlot()), runtime_(runtime), options_(std::move(options)) {
   Upstream::ThreadLocalCluster* cluster = cm_.get(config.getString("collector_cluster"));
   if (!cluster) {
     throw EnvoyException(fmt::format("{} collector cluster is not defined on cluster manager level",
@@ -102,19 +103,18 @@ LightStepDriver::LightStepDriver(const Json::Object& config,
         fmt::format("{} collector cluster must support http2 for gRPC calls", cluster_->name()));
   }
 
-  tls_->set(
-      [this, &options](Event::Dispatcher& dispatcher) -> ThreadLocal::ThreadLocalObjectSharedPtr {
-        lightstep::LightStepTracerOptions tls_options;
-        tls_options.access_token = options.access_token;
-        tls_options.component_name = options.component_name;
-        tls_options.use_thread = false;
-        tls_options.transporter.reset(new LightStepTransporter{*this});
-        std::shared_ptr<lightstep::LightStepTracer> tracer =
-            lightstep::MakeLightStepTracer(std::move(tls_options));
+  tls_->set([this](Event::Dispatcher& dispatcher) -> ThreadLocal::ThreadLocalObjectSharedPtr {
+    lightstep::LightStepTracerOptions tls_options;
+    tls_options.access_token = options_->access_token;
+    tls_options.component_name = options_->component_name;
+    tls_options.use_thread = false;
+    tls_options.transporter.reset(new LightStepTransporter{*this});
+    std::shared_ptr<lightstep::LightStepTracer> tracer =
+        lightstep::MakeLightStepTracer(std::move(tls_options));
 
-        return ThreadLocal::ThreadLocalObjectSharedPtr{
-            new TlsLightStepTracer(std::move(tracer), *this, dispatcher)};
-      });
+    return ThreadLocal::ThreadLocalObjectSharedPtr{
+        new TlsLightStepTracer(std::move(tracer), *this, dispatcher)};
+  });
 }
 
 const opentracing::Tracer& LightStepDriver::tracer() const {
