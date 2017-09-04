@@ -63,13 +63,30 @@ void LightStepDriver::LightStepTransporter::onFailure(Http::AsyncClient::Failure
 }
 
 LightStepDriver::TlsLightStepTracer::TlsLightStepTracer(
-    std::shared_ptr<opentracing::Tracer>&& tracer, LightStepDriver& driver)
-    : tracer_(std::move(tracer)), driver_(driver) {}
+    std::shared_ptr<lightstep::LightStepTracer>&& tracer, LightStepDriver& driver,
+    Event::Dispatcher& dispatcher)
+    : tracer_(std::move(tracer)), driver_(driver) {
+  flush_timer_ = dispatcher.createTimer([this]() -> void {
+    driver_.tracerStats().timer_flushed_.inc();
+    tracer_->Flush();
+    enableTimer();
+  });
+
+  enableTimer();
+}
+
+const opentracing::Tracer& LightStepDriver::TlsLightStepTracer::tracer() const { return *tracer_; }
+
+void LightStepDriver::TlsLightStepTracer::enableTimer() {
+  uint64_t flush_interval =
+      driver_.runtime().snapshot().getInteger("tracing.lightstep.flush_interval_ms", 1000U);
+  flush_timer_->enableTimer(std::chrono::milliseconds(flush_interval));
+}
 
 LightStepDriver::LightStepDriver(const Json::Object& config,
                                  Upstream::ClusterManager& cluster_manager, Stats::Store& stats,
                                  ThreadLocal::SlotAllocator& tls, Runtime::Loader& runtime,
-                                 const lightstep::LightStepTracerOptions& /*options*/)
+                                 const lightstep::LightStepTracerOptions& options)
     : cm_(cluster_manager), tracer_stats_{LIGHTSTEP_TRACER_STATS(
                                 POOL_COUNTER_PREFIX(stats, "tracing.lightstep."))},
       tls_(tls.allocateSlot()), runtime_(runtime) {
@@ -85,16 +102,23 @@ LightStepDriver::LightStepDriver(const Json::Object& config,
         fmt::format("{} collector cluster must support http2 for gRPC calls", cluster_->name()));
   }
 
-  tls_->set([this](Event::Dispatcher & /*dispatcher*/) -> ThreadLocal::ThreadLocalObjectSharedPtr {
-    std::shared_ptr<opentracing::Tracer> tracer = opentracing::MakeNoopTracer();
+  tls_->set(
+      [this, &options](Event::Dispatcher& dispatcher) -> ThreadLocal::ThreadLocalObjectSharedPtr {
+        lightstep::LightStepTracerOptions tls_options;
+        tls_options.access_token = options.access_token;
+        tls_options.component_name = options.component_name;
+        tls_options.use_thread = false;
+        tls_options.transporter.reset(new LightStepTransporter{*this});
+        std::shared_ptr<lightstep::LightStepTracer> tracer =
+            lightstep::MakeLightStepTracer(std::move(tls_options));
 
-    return ThreadLocal::ThreadLocalObjectSharedPtr{
-        new TlsLightStepTracer(std::move(tracer), *this)};
-  });
+        return ThreadLocal::ThreadLocalObjectSharedPtr{
+            new TlsLightStepTracer(std::move(tracer), *this, dispatcher)};
+      });
 }
 
 const opentracing::Tracer& LightStepDriver::tracer() const {
-  return *tls_->getTyped<TlsLightStepTracer>().tracer_;
+  return tls_->getTyped<TlsLightStepTracer>().tracer();
 }
 
 } // namespace Tracing

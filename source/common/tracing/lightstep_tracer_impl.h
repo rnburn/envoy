@@ -72,11 +72,19 @@ private:
     LightStepDriver& driver_;
   };
 
-  struct TlsLightStepTracer : ThreadLocal::ThreadLocalObject {
-    TlsLightStepTracer(std::shared_ptr<opentracing::Tracer>&& tracer, LightStepDriver& driver);
+  class TlsLightStepTracer : public ThreadLocal::ThreadLocalObject {
+  public:
+    TlsLightStepTracer(std::shared_ptr<lightstep::LightStepTracer>&& tracer,
+                       LightStepDriver& driver, Event::Dispatcher& dispatcher);
 
-    std::shared_ptr<opentracing::Tracer> tracer_;
+    const opentracing::Tracer& tracer() const;
+
+  private:
+    void enableTimer();
+
+    std::shared_ptr<lightstep::LightStepTracer> tracer_;
     LightStepDriver& driver_;
+    Event::TimerPtr flush_timer_;
   };
 
   Upstream::ClusterManager& cm_;
