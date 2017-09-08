@@ -19,14 +19,11 @@ namespace Tracing {
 LightStepDriver::LightStepTransporter::LightStepTransporter(LightStepDriver& driver)
     : driver_(driver) {}
 
-void LightStepDriver::LightStepTransporter::Send(
-    const google::protobuf::Message& request, google::protobuf::Message& response,
-    void (*on_success)(void* context), void (*on_failure)(std::error_code error, void* context),
-    void* context) {
-  on_success_callback_ = on_success;
-  on_failure_callback_ = on_failure;
+void LightStepDriver::LightStepTransporter::Send(const google::protobuf::Message& request,
+                                                 google::protobuf::Message& response,
+                                                 lightstep::AsyncTransporter::Callback& callback) {
+  active_callback_ = &callback;
   active_response_ = &response;
-  active_context_ = context;
 
   Http::MessagePtr message =
       Grpc::Common::prepareHeaders(driver_.cluster()->name(), lightstep::CollectorServiceFullName(),
@@ -49,18 +46,18 @@ void LightStepDriver::LightStepTransporter::onSuccess(Http::MessagePtr&& respons
     if (!active_response_->ParseFromString(response->bodyAsString())) {
       throw EnvoyException("Failed to parse LightStep collector response");
     }
-    on_success_callback_(active_context_);
+    active_callback_->OnSuccess();
   } catch (const Grpc::Exception& ex) {
     Grpc::Common::chargeStat(*driver_.cluster(), lightstep::CollectorServiceFullName(),
                              lightstep::CollectorMethodName(), false);
-    on_failure_callback_(std::error_code(), active_context_);
+    active_callback_->OnFailure(std::error_code());
   }
 }
 
 void LightStepDriver::LightStepTransporter::onFailure(Http::AsyncClient::FailureReason) {
   Grpc::Common::chargeStat(*driver_.cluster(), lightstep::CollectorServiceFullName(),
                            lightstep::CollectorMethodName(), false);
-  on_failure_callback_(std::error_code(), active_context_);
+  active_callback_->OnFailure(std::error_code());
 }
 
 LightStepDriver::TlsLightStepTracer::TlsLightStepTracer(

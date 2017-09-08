@@ -57,18 +57,15 @@ private:
 
     // lightstep::AsyncTransporter
     void Send(const google::protobuf::Message& request, google::protobuf::Message& response,
-              void (*on_success)(void* context),
-              void (*on_failure)(std::error_code error, void* context), void* context) override;
+              lightstep::AsyncTransporter::Callback& callback) override;
 
     // Http::AsyncClient::Callbacks
     void onSuccess(Http::MessagePtr&& response) override;
     void onFailure(Http::AsyncClient::FailureReason) override;
 
   private:
-    void (*on_success_callback_)(void* context) = nullptr;
-    void (*on_failure_callback_)(std::error_code error, void* context) = nullptr;
+    lightstep::AsyncTransporter::Callback* active_callback_ = nullptr;
     google::protobuf::Message* active_response_ = nullptr;
-    void* active_context_ = nullptr;
     LightStepDriver& driver_;
   };
 
