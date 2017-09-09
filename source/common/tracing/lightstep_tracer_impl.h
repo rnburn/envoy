@@ -40,7 +40,7 @@ class LightStepDriver : public OpenTracingDriver {
 public:
   LightStepDriver(const Json::Object& config, Upstream::ClusterManager& cluster_manager,
                   Stats::Store& stats, ThreadLocal::SlotAllocator& tls, Runtime::Loader& runtime,
-                  const lightstep::LightStepTracerOptions& options);
+                  std::unique_ptr<lightstep::LightStepTracerOptions>&& options);
 
   // Tracer::OpenTracingDriver
   const opentracing::Tracer& tracer() const override;
@@ -57,26 +57,31 @@ private:
 
     // lightstep::AsyncTransporter
     void Send(const google::protobuf::Message& request, google::protobuf::Message& response,
-              void (*on_success)(void* context),
-              void (*on_failure)(std::error_code error, void* context), void* context) override;
+              lightstep::AsyncTransporter::Callback& callback) override;
 
     // Http::AsyncClient::Callbacks
     void onSuccess(Http::MessagePtr&& response) override;
     void onFailure(Http::AsyncClient::FailureReason) override;
 
   private:
-    void (*on_success_callback_)(void* context) = nullptr;
-    void (*on_failure_callback_)(std::error_code error, void* context) = nullptr;
+    lightstep::AsyncTransporter::Callback* active_callback_ = nullptr;
     google::protobuf::Message* active_response_ = nullptr;
-    void* active_context_ = nullptr;
     LightStepDriver& driver_;
   };
 
-  struct TlsLightStepTracer : ThreadLocal::ThreadLocalObject {
-    TlsLightStepTracer(std::shared_ptr<opentracing::Tracer>&& tracer, LightStepDriver& driver);
+  class TlsLightStepTracer : public ThreadLocal::ThreadLocalObject {
+  public:
+    TlsLightStepTracer(std::shared_ptr<lightstep::LightStepTracer>&& tracer,
+                       LightStepDriver& driver, Event::Dispatcher& dispatcher);
 
-    std::shared_ptr<opentracing::Tracer> tracer_;
+    const opentracing::Tracer& tracer() const;
+
+  private:
+    void enableTimer();
+
+    std::shared_ptr<lightstep::LightStepTracer> tracer_;
     LightStepDriver& driver_;
+    Event::TimerPtr flush_timer_;
   };
 
   Upstream::ClusterManager& cm_;
@@ -84,6 +89,7 @@ private:
   LightstepTracerStats tracer_stats_;
   ThreadLocal::SlotPtr tls_;
   Runtime::Loader& runtime_;
+  std::unique_ptr<lightstep::LightStepTracerOptions> options_;
 };
 
 } // Tracing
