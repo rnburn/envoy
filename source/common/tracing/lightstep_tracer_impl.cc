@@ -50,6 +50,7 @@ void LightStepDriver::LightStepTransporter::onSuccess(Http::MessagePtr&& respons
   } catch (const Grpc::Exception& ex) {
     Grpc::Common::chargeStat(*driver_.cluster(), lightstep::CollectorServiceFullName(),
                              lightstep::CollectorMethodName(), false);
+    // TODO(rnburn): Need to return a more specific std::error_code.
     active_callback_->OnFailure(std::error_code());
   }
 }
