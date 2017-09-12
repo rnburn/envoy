@@ -53,5 +53,5 @@ $(THIRDPARTY_DEPS)/%.dep: $(RECIPES)/%.sh
 # Special support for targets that need protobuf, and hence take a dependency on protobuf.dep.
 PROTOBUF_BUILD ?= $(THIRDPARTY_BUILD)/$(if $(BUILD_DISTINCT),protobuf.dep,)
 
-$(THIRDPARTY_DEPS)/lightstep.dep: $(RECIPES)/lightstep.sh $(THIRDPARTY_DEPS)/protobuf.dep
+$(THIRDPARTY_DEPS)/lightstep.dep: $(RECIPES)/lightstep.sh $(THIRDPARTY_DEPS)/protobuf.dep $(THIRDPARTY_DEPS)/opentracing.dep
 	@+$(call build-recipe,PROTOBUF_BUILD=$(PROTOBUF_BUILD))
