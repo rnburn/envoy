@@ -1,6 +1,7 @@
 #include <chrono>
 #include <memory>
 #include <string>
+#include <sstream>
 
 #include "common/common/base64.h"
 #include "common/http/header_map_impl.h"
@@ -187,146 +188,190 @@ TEST_F(LightStepDriverTest, FlushSeveralSpans) {
                     .counter("grpc.lightstep.collector.CollectorService.Report.success")
                     .value());
 
-  callback->onFailure(Http::AsyncClient::FailureReason::Reset);
-
   EXPECT_EQ(1U, cm_.thread_local_cluster_.cluster_.info_->stats_store_
-                    .counter("grpc.lightstep.collector.CollectorService.Report.failure")
-                    .value());
-  EXPECT_EQ(2U, cm_.thread_local_cluster_.cluster_.info_->stats_store_
                     .counter("grpc.lightstep.collector.CollectorService.Report.total")
                     .value());
   EXPECT_EQ(2U, stats_.counter("tracing.lightstep.spans_sent").value());
 }
 
-/* TEST_F(LightStepDriverTest, FlushSpansTimer) { */
-/*   setupValidDriver(); */
+TEST_F(LightStepDriverTest, FlushOneFailure) {
+  setupValidDriver();
 
-/*   const Optional<std::chrono::milliseconds> timeout(std::chrono::seconds(5)); */
-/*   EXPECT_CALL(cm_.async_client_, send_(_, _, timeout)); */
+  Http::MockAsyncClientRequest request(&cm_.async_client_);
+  Http::AsyncClient::Callbacks* callback;
+  const Optional<std::chrono::milliseconds> timeout(std::chrono::seconds(5));
 
-/*   EXPECT_CALL(runtime_.snapshot_, getInteger("tracing.lightstep.min_flush_spans", 5)) */
-/*       .WillOnce(Return(5)); */
+  EXPECT_CALL(cm_.async_client_, send_(_, _, timeout))
+      .WillOnce(
+          Invoke([&](Http::MessagePtr& message, Http::AsyncClient::Callbacks& callbacks,
+                     const Optional<std::chrono::milliseconds>&) -> Http::AsyncClient::Request* {
+            callback = &callbacks;
 
-/*   SpanPtr span = driver_->startSpan(request_headers_, operation_name_, start_time_); */
-/*   Tracing::MockFinalizer finalizer; */
+            EXPECT_STREQ("/lightstep.collector.CollectorService/Report",
+                         message->headers().Path()->value().c_str());
+            EXPECT_STREQ("fake_cluster", message->headers().Host()->value().c_str());
+            EXPECT_STREQ("application/grpc", message->headers().ContentType()->value().c_str());
 
-/*   EXPECT_CALL(finalizer, finalize(_)); */
-/*   span->finishSpan(finalizer); */
+            return &request;
+          }));
 
-/*   // Timer should be re-enabled. */
-/*   EXPECT_CALL(*timer_, enableTimer(std::chrono::milliseconds(1000))); */
-/*   EXPECT_CALL(runtime_.snapshot_, getInteger("tracing.lightstep.request_timeout", 5000U)) */
-/*       .WillOnce(Return(5000U)); */
-/*   EXPECT_CALL(runtime_.snapshot_, getInteger("tracing.lightstep.flush_interval_ms", 1000U)) */
-/*       .WillOnce(Return(1000U)); */
+  EXPECT_CALL(runtime_.snapshot_, getInteger("tracing.lightstep.min_flush_spans", 5))
+      .WillOnce(Return(1));
+  EXPECT_CALL(runtime_.snapshot_, getInteger("tracing.lightstep.request_timeout", 5000U))
+      .WillOnce(Return(5000U));
 
-/*   timer_->callback_(); */
+  SpanPtr first_span = driver_->startSpan(request_headers_, operation_name_, start_time_);
+  Tracing::MockFinalizer finalizer;
 
-/*   EXPECT_EQ(1U, stats_.counter("tracing.lightstep.timer_flushed").value()); */
-/*   EXPECT_EQ(1U, stats_.counter("tracing.lightstep.spans_sent").value()); */
-/* } */
+  EXPECT_CALL(finalizer, finalize(_));
+  first_span->finishSpan(finalizer);
 
-/* TEST_F(LightStepDriverTest, FlushOneSpanGrpcFailure) { */
-/*   setupValidDriver(); */
+  Http::MessagePtr msg(new Http::ResponseMessageImpl(
+      Http::HeaderMapPtr{new Http::TestHeaderMapImpl{{":status", "200"}}}));
 
-/*   Http::MockAsyncClientRequest request(&cm_.async_client_); */
-/*   Http::AsyncClient::Callbacks* callback; */
-/*   const Optional<std::chrono::milliseconds> timeout(std::chrono::seconds(5)); */
+  msg->trailers(Http::HeaderMapPtr{new Http::TestHeaderMapImpl{{"grpc-status", "0"}}});
 
-/*   EXPECT_CALL(cm_.async_client_, send_(_, _, timeout)) */
-/*       .WillOnce( */
-/*           Invoke([&](Http::MessagePtr& message, Http::AsyncClient::Callbacks& callbacks, */
-/*                      const Optional<std::chrono::milliseconds>&) -> Http::AsyncClient::Request* { */
-/*             callback = &callbacks; */
+  callback->onFailure(Http::AsyncClient::FailureReason::Reset);
 
-/*             EXPECT_STREQ("/lightstep.collector.CollectorService/Report", */
-/*                          message->headers().Path()->value().c_str()); */
-/*             EXPECT_STREQ("fake_cluster", message->headers().Host()->value().c_str()); */
-/*             EXPECT_STREQ("application/grpc", message->headers().ContentType()->value().c_str()); */
+  EXPECT_EQ(1U, cm_.thread_local_cluster_.cluster_.info_->stats_store_
+                    .counter("grpc.lightstep.collector.CollectorService.Report.failure")
+                    .value());
+  EXPECT_EQ(1U, cm_.thread_local_cluster_.cluster_.info_->stats_store_
+                    .counter("grpc.lightstep.collector.CollectorService.Report.total")
+                    .value());
+  EXPECT_EQ(1U, stats_.counter("tracing.lightstep.spans_sent").value());
+}
 
-/*             return &request; */
-/*           })); */
-/*   EXPECT_CALL(runtime_.snapshot_, getInteger("tracing.lightstep.min_flush_spans", 5)) */
-/*       .WillOnce(Return(1)); */
-/*   EXPECT_CALL(runtime_.snapshot_, getInteger("tracing.lightstep.request_timeout", 5000U)) */
-/*       .WillOnce(Return(5000U)); */
+TEST_F(LightStepDriverTest, FlushSpansTimer) {
+  setupValidDriver();
 
-/*   SpanPtr span = driver_->startSpan(request_headers_, operation_name_, start_time_); */
-/*   Tracing::MockFinalizer finalizer; */
+  const Optional<std::chrono::milliseconds> timeout(std::chrono::seconds(5));
+  EXPECT_CALL(cm_.async_client_, send_(_, _, timeout));
 
-/*   EXPECT_CALL(finalizer, finalize(_)); */
-/*   span->finishSpan(finalizer); */
+  EXPECT_CALL(runtime_.snapshot_, getInteger("tracing.lightstep.min_flush_spans", 5))
+      .WillOnce(Return(5));
 
-/*   Http::MessagePtr msg(new Http::ResponseMessageImpl( */
-/*       Http::HeaderMapPtr{new Http::TestHeaderMapImpl{{":status", "200"}}})); */
+  SpanPtr span = driver_->startSpan(request_headers_, operation_name_, start_time_);
+  Tracing::MockFinalizer finalizer;
 
-/*   // No trailers, gRPC is considered failed. */
-/*   callback->onSuccess(std::move(msg)); */
+  EXPECT_CALL(finalizer, finalize(_));
+  span->finishSpan(finalizer);
 
-/*   EXPECT_EQ(1U, cm_.thread_local_cluster_.cluster_.info_->stats_store_ */
-/*                     .counter("grpc.lightstep.collector.CollectorService.Report.failure") */
-/*                     .value()); */
-/*   EXPECT_EQ(1U, cm_.thread_local_cluster_.cluster_.info_->stats_store_ */
-/*                     .counter("grpc.lightstep.collector.CollectorService.Report.total") */
-/*                     .value()); */
-/*   EXPECT_EQ(1U, stats_.counter("tracing.lightstep.spans_sent").value()); */
-/* } */
+  // Timer should be re-enabled.
+  EXPECT_CALL(*timer_, enableTimer(std::chrono::milliseconds(1000)));
+  EXPECT_CALL(runtime_.snapshot_, getInteger("tracing.lightstep.request_timeout", 5000U))
+      .WillOnce(Return(5000U));
+  EXPECT_CALL(runtime_.snapshot_, getInteger("tracing.lightstep.flush_interval_ms", 1000U))
+      .WillOnce(Return(1000U));
 
-/* TEST_F(LightStepDriverTest, SerializeAndDeserializeContext) { */
-/*   setupValidDriver(); */
+  timer_->callback_();
 
-/*   // Supply bogus context, that will be simply ignored. */
-/*   const std::string invalid_context = "notvalidcontext"; */
-/*   request_headers_.insertOtSpanContext().value(invalid_context); */
-/*   driver_->startSpan(request_headers_, operation_name_, start_time_); */
+  EXPECT_EQ(1U, stats_.counter("tracing.lightstep.timer_flushed").value());
+  EXPECT_EQ(1U, stats_.counter("tracing.lightstep.spans_sent").value());
+}
 
-/*   std::string injected_ctx = request_headers_.OtSpanContext()->value().c_str(); */
-/*   EXPECT_FALSE(injected_ctx.empty()); */
+TEST_F(LightStepDriverTest, FlushOneSpanGrpcFailure) {
+  setupValidDriver();
 
-/*   // Supply empty context. */
-/*   request_headers_.removeOtSpanContext(); */
-/*   SpanPtr span = driver_->startSpan(request_headers_, operation_name_, start_time_); */
+  Http::MockAsyncClientRequest request(&cm_.async_client_);
+  Http::AsyncClient::Callbacks* callback;
+  const Optional<std::chrono::milliseconds> timeout(std::chrono::seconds(5));
 
-/*   EXPECT_EQ(nullptr, request_headers_.OtSpanContext()); */
-/*   span->injectContext(request_headers_); */
+  EXPECT_CALL(cm_.async_client_, send_(_, _, timeout))
+      .WillOnce(
+          Invoke([&](Http::MessagePtr& message, Http::AsyncClient::Callbacks& callbacks,
+                     const Optional<std::chrono::milliseconds>&) -> Http::AsyncClient::Request* {
+            callback = &callbacks;
 
-/*   injected_ctx = request_headers_.OtSpanContext()->value().c_str(); */
-/*   EXPECT_FALSE(injected_ctx.empty()); */
+            EXPECT_STREQ("/lightstep.collector.CollectorService/Report",
+                         message->headers().Path()->value().c_str());
+            EXPECT_STREQ("fake_cluster", message->headers().Host()->value().c_str());
+            EXPECT_STREQ("application/grpc", message->headers().ContentType()->value().c_str());
 
-/*   // Context can be parsed fine. */
-/*   lightstep::BinaryCarrier ctx; */
-/*   std::string context = Base64::decode(injected_ctx); */
-/*   ctx.ParseFromString(context); */
+            return &request;
+          }));
+  EXPECT_CALL(runtime_.snapshot_, getInteger("tracing.lightstep.min_flush_spans", 5))
+      .WillOnce(Return(1));
+  EXPECT_CALL(runtime_.snapshot_, getInteger("tracing.lightstep.request_timeout", 5000U))
+      .WillOnce(Return(5000U));
 
-/*   // Supply parent context, request_headers has properly populated x-ot-span-context. */
-/*   SpanPtr span_with_parent = driver_->startSpan(request_headers_, operation_name_, start_time_); */
-/*   request_headers_.removeOtSpanContext(); */
-/*   span_with_parent->injectContext(request_headers_); */
-/*   injected_ctx = request_headers_.OtSpanContext()->value().c_str(); */
-/*   EXPECT_FALSE(injected_ctx.empty()); */
-/* } */
+  SpanPtr span = driver_->startSpan(request_headers_, operation_name_, start_time_);
+  Tracing::MockFinalizer finalizer;
 
-/* TEST_F(LightStepDriverTest, SpawnChild) { */
-/*   setupValidDriver(); */
+  EXPECT_CALL(finalizer, finalize(_));
+  span->finishSpan(finalizer);
 
-/*   SpanPtr parent = driver_->startSpan(request_headers_, operation_name_, start_time_); */
-/*   parent->injectContext(request_headers_); */
+  Http::MessagePtr msg(new Http::ResponseMessageImpl(
+      Http::HeaderMapPtr{new Http::TestHeaderMapImpl{{":status", "200"}}}));
 
-/*   SpanPtr childViaHeaders = driver_->startSpan(request_headers_, operation_name_, start_time_); */
-/*   SpanPtr childViaSpawn = parent->spawnChild(operation_name_, start_time_); */
+  // No trailers, gRPC is considered failed.
+  callback->onSuccess(std::move(msg));
 
-/*   Http::TestHeaderMapImpl base1{{":path", "/"}, {":method", "GET"}, {"x-request-id", "foo"}}; */
-/*   Http::TestHeaderMapImpl base2{{":path", "/"}, {":method", "GET"}, {"x-request-id", "foo"}}; */
+  EXPECT_EQ(1U, cm_.thread_local_cluster_.cluster_.info_->stats_store_
+                    .counter("grpc.lightstep.collector.CollectorService.Report.failure")
+                    .value());
+  EXPECT_EQ(1U, cm_.thread_local_cluster_.cluster_.info_->stats_store_
+                    .counter("grpc.lightstep.collector.CollectorService.Report.total")
+                    .value());
+  EXPECT_EQ(1U, stats_.counter("tracing.lightstep.spans_sent").value());
+}
 
-/*   childViaHeaders->injectContext(base1); */
-/*   childViaSpawn->injectContext(base2); */
+TEST_F(LightStepDriverTest, SerializeAndDeserializeContext) {
+  setupValidDriver();
 
-/*   std::string base1_context = Base64::decode(base1.OtSpanContext()->value().c_str()); */
-/*   std::string base2_context = Base64::decode(base2.OtSpanContext()->value().c_str()); */
+  // Supply bogus context, that will be simply ignored.
+  const std::string invalid_context = "notvalidcontext";
+  request_headers_.insertOtSpanContext().value(invalid_context);
+  driver_->startSpan(request_headers_, operation_name_, start_time_);
 
-/*   EXPECT_FALSE(base1_context.empty()); */
-/*   EXPECT_FALSE(base2_context.empty()); */
-/* } */
+  std::string injected_ctx = request_headers_.OtSpanContext()->value().c_str();
+  EXPECT_FALSE(injected_ctx.empty());
+
+  // Supply empty context.
+  request_headers_.removeOtSpanContext();
+  SpanPtr span = driver_->startSpan(request_headers_, operation_name_, start_time_);
+
+  EXPECT_EQ(nullptr, request_headers_.OtSpanContext());
+  span->injectContext(request_headers_);
+
+  injected_ctx = request_headers_.OtSpanContext()->value().c_str();
+  EXPECT_FALSE(injected_ctx.empty());
+
+  // Context can be parsed fine.
+  const opentracing::Tracer& tracer = driver_->tracer();
+  std::string context = Base64::decode(injected_ctx);
+  std::istringstream iss{context, std::ios::binary};
+  EXPECT_TRUE(tracer.Extract(iss));
+
+  // Supply parent context, request_headers has properly populated x-ot-span-context.
+  SpanPtr span_with_parent = driver_->startSpan(request_headers_, operation_name_, start_time_);
+  request_headers_.removeOtSpanContext();
+  span_with_parent->injectContext(request_headers_);
+  injected_ctx = request_headers_.OtSpanContext()->value().c_str();
+  EXPECT_FALSE(injected_ctx.empty());
+}
+
+TEST_F(LightStepDriverTest, SpawnChild) {
+  setupValidDriver();
+
+  SpanPtr parent = driver_->startSpan(request_headers_, operation_name_, start_time_);
+  parent->injectContext(request_headers_);
+
+  SpanPtr childViaHeaders = driver_->startSpan(request_headers_, operation_name_, start_time_);
+  SpanPtr childViaSpawn = parent->spawnChild(operation_name_, start_time_);
+
+  Http::TestHeaderMapImpl base1{{":path", "/"}, {":method", "GET"}, {"x-request-id", "foo"}};
+  Http::TestHeaderMapImpl base2{{":path", "/"}, {":method", "GET"}, {"x-request-id", "foo"}};
+
+  childViaHeaders->injectContext(base1);
+  childViaSpawn->injectContext(base2);
+
+  std::string base1_context = Base64::decode(base1.OtSpanContext()->value().c_str());
+  std::string base2_context = Base64::decode(base2.OtSpanContext()->value().c_str());
+
+  EXPECT_FALSE(base1_context.empty());
+  EXPECT_FALSE(base2_context.empty());
+}
 
 } // namespace Tracing
 } // namespace Envoy
