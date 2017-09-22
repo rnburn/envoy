@@ -60,6 +60,14 @@ void LightStepDriver::LightStepTransporter::onFailure(Http::AsyncClient::Failure
   active_callback_->OnFailure(std::error_code());
 }
 
+LightStepDriver::LightStepMetricsObserver::LightStepMetricsObserver(LightStepDriver& driver)
+  : driver_(driver)
+{}
+
+void LightStepDriver::LightStepMetricsObserver::OnSpansSent(int num_spans) {
+  driver_.tracerStats().spans_sent_.add(num_spans);
+}
+
 LightStepDriver::TlsLightStepTracer::TlsLightStepTracer(
     std::shared_ptr<lightstep::LightStepTracer>&& tracer, LightStepDriver& driver,
     Event::Dispatcher& dispatcher)
@@ -105,6 +113,11 @@ LightStepDriver::LightStepDriver(const Json::Object& config,
     tls_options.access_token = options_->access_token;
     tls_options.component_name = options_->component_name;
     tls_options.use_thread = false;
+    tls_options.max_buffered_spans = std::function<size_t()>{[this] {
+      auto result =  runtime_.snapshot().getInteger("tracing.lightstep.min_flush_spans", 5U);
+      return result;
+    }};
+    tls_options.metrics_observer.reset(new LightStepMetricsObserver{*this});
     tls_options.transporter.reset(new LightStepTransporter{*this});
     std::shared_ptr<lightstep::LightStepTracer> tracer =
         lightstep::MakeLightStepTracer(std::move(tls_options));

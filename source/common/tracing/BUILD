@@ -48,7 +48,7 @@ envoy_cc_library(
     hdrs = [
         "lightstep_tracer_impl.h",
     ],
-    external_deps = ["lightstep", "opentracing"],
+    external_deps = ["lightstep"],
     deps = [
         ":http_tracer_lib",
     ],

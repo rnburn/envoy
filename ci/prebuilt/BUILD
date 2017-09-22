@@ -73,6 +73,7 @@ cc_library(
     srcs = ["thirdparty_build/lib/libopentracing.a"],
     hdrs = glob([
         "thirdparty_build/include/opentracing/**/*.h",
+        "thirdparty_build/include/opentracing/**/*.hpp",
     ]),
     includes = ["thirdparty_build/include"],
 )

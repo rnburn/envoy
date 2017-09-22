@@ -69,6 +69,15 @@ private:
     LightStepDriver& driver_;
   };
 
+  class LightStepMetricsObserver : public ::lightstep::MetricsObserver {
+   public:
+     explicit LightStepMetricsObserver(LightStepDriver& driver);
+
+     void OnSpansSent(int num_spans) override;
+   private:
+     LightStepDriver& driver_;
+  };
+
   class TlsLightStepTracer : public ThreadLocal::ThreadLocalObject {
   public:
     TlsLightStepTracer(std::shared_ptr<lightstep::LightStepTracer>&& tracer,

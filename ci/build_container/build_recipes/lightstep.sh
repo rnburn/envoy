@@ -4,8 +4,8 @@ set -e
 
 VERSION=0.4
 
-git clone https://github.com/lightstep/lightstep-tracer-cpp.git
-git clone https://github.com/lightstep/lightstep-tracer-common.git lightstep-tracer-cpp/lightstep-tracer-common/
+git clone https://github.com/rnburn/lightstep-tracer-cpp-1.git lightstep-tracer-cpp
+# git clone https://github.com/lightstep/lightstep-tracer-common.git lightstep-tracer-cpp/lightstep-tracer-common/
 cd lightstep-tracer-cpp
 mkdir .build
 cd .build
