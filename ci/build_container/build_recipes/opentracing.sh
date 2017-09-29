@@ -2,10 +2,12 @@
 
 set -e
 
-VERSION=0.1
+VERSION=1.0.0
 
-git clone https://github.com/opentracing/opentracing-cpp
-cd opentracing-cpp
+wget -O opentracing-cpp-$VERSION.tar.gz https://github.com/opentracing/opentracing-cpp/archive/v${VERSION}.tar.gz
+tar xf opentracing-cpp-$VERSION.tar.gz
+cd opentracing-cpp-$VERSION
+
 mkdir .build
 cd .build
 cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$THIRDPARTY_BUILD ..
