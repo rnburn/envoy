@@ -17,6 +17,10 @@ void OpenTracingSpan::finishSpan(SpanFinalizer& finalizer) {
   span_->Finish();
 }
 
+void OpenTracingSpan::setOperation(const std::string& operation) {
+  span_->SetOperationName(operation);
+}
+
 void OpenTracingSpan::setTag(const std::string& name, const std::string& value) {
   span_->SetTag(name, value);
 }
@@ -29,7 +33,7 @@ void OpenTracingSpan::injectContext(Http::HeaderMap& request_headers) {
       Base64::encode(current_span_context.c_str(), current_span_context.length()));
 }
 
-SpanPtr OpenTracingSpan::spawnChild(const std::string& name, SystemTime start_time) {
+SpanPtr OpenTracingSpan::spawnChild(const Config&, const std::string& name, SystemTime start_time) {
   std::unique_ptr<opentracing::Span> ot_span = span_->tracer().StartSpan(
       name, {opentracing::ChildOf(&span_->context()), opentracing::StartTimestamp(start_time)});
   if (ot_span == nullptr) {
@@ -38,7 +42,7 @@ SpanPtr OpenTracingSpan::spawnChild(const std::string& name, SystemTime start_ti
   return SpanPtr{new OpenTracingSpan(std::move(ot_span))};
 }
 
-SpanPtr OpenTracingDriver::startSpan(Http::HeaderMap& request_headers,
+SpanPtr OpenTracingDriver::startSpan(const Config&, Http::HeaderMap& request_headers,
                                      const std::string& operation_name, SystemTime start_time) {
   const opentracing::Tracer& tracer = this->tracer();
   std::unique_ptr<opentracing::Span> active_span;

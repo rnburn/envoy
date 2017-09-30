@@ -10,6 +10,8 @@ envoy_package()
 exports_files([
     "echo_server.json",
     "server.json",
+    "server_ads.yaml",
+    "server_cors_filter.json",
     "server_grpc_json_transcoder.json",
     "server_http2.json",
     "server_http2_upstream.json",
@@ -27,7 +29,6 @@ filegroup(
         "server_xds.bootstrap.yaml",
         "server_xds.cds.yaml",
         "server_xds.eds.yaml",
-        "server_xds.json",
         "server_xds.lds.yaml",
         "server_xds.rds.yaml",
     ],

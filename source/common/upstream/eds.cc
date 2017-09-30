@@ -5,9 +5,12 @@
 #include "common/config/metadata.h"
 #include "common/config/subscription_factory.h"
 #include "common/config/utility.h"
+#include "common/config/well_known_names.h"
 #include "common/network/address_impl.h"
 #include "common/network/utility.h"
 #include "common/upstream/sds_subscription.h"
+
+#include "fmt/format.h"
 
 namespace Envoy {
 namespace Upstream {
@@ -39,6 +42,12 @@ void EdsClusterImpl::initialize() { subscription_->start({cluster_name_}, *this)
 
 void EdsClusterImpl::onConfigUpdate(const ResourceVector& resources) {
   std::vector<HostSharedPtr> new_hosts;
+  if (resources.empty()) {
+    ENVOY_LOG(debug, "Missing ClusterLoadAssignment for {} in onConfigUpdate()", cluster_name_);
+    info_->stats().update_empty_.inc();
+    runInitializeCallbackIfAny();
+    return;
+  }
   if (resources.size() != 1) {
     throw EnvoyException(fmt::format("Unexpected EDS resource length: {}", resources.size()));
   }
@@ -49,16 +58,11 @@ void EdsClusterImpl::onConfigUpdate(const ResourceVector& resources) {
                                      cluster_load_assignment.cluster_name()));
   }
   for (const auto& locality_lb_endpoint : cluster_load_assignment.endpoints()) {
-    const std::string& zone = locality_lb_endpoint.locality().zone();
-
     for (const auto& lb_endpoint : locality_lb_endpoint.lb_endpoints()) {
-      const bool canary = Config::Metadata::metadataValue(lb_endpoint.metadata(),
-                                                          Config::MetadataFilters::get().ENVOY_LB,
-                                                          Config::MetadataEnvoyLbKeys::get().CANARY)
-                              .bool_value();
       new_hosts.emplace_back(new HostImpl(
-          info_, "", Network::Utility::fromProtoAddress(lb_endpoint.endpoint().address()), canary,
-          lb_endpoint.load_balancing_weight().value(), zone));
+          info_, "", Network::Utility::fromProtoAddress(lb_endpoint.endpoint().address()),
+          lb_endpoint.metadata(), lb_endpoint.load_balancing_weight().value(),
+          locality_lb_endpoint.locality()));
     }
   }
 
@@ -75,7 +79,7 @@ void EdsClusterImpl::onConfigUpdate(const ResourceVector& resources) {
       std::map<std::string, std::vector<HostSharedPtr>> hosts_per_zone;
 
       for (const HostSharedPtr& host : *current_hosts_copy) {
-        hosts_per_zone[host->zone()].push_back(host);
+        hosts_per_zone[host->locality().zone()].push_back(host);
       }
 
       // Populate per_zone hosts only if upstream cluster has hosts in the same zone.

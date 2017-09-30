@@ -11,7 +11,7 @@
 #include "common/http/message_impl.h"
 #include "common/tracing/http_tracer_impl.h"
 
-#include "spdlog/spdlog.h"
+#include "fmt/format.h"
 
 namespace Envoy {
 namespace Tracing {

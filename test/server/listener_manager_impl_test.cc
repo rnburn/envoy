@@ -209,7 +209,8 @@ TEST_F(ListenerManagerImplWithRealFiltersTest, BadFilterName) {
   )EOF";
 
   EXPECT_THROW_WITH_MESSAGE(manager_->addOrUpdateListener(parseListenerFromJson(json)),
-                            EnvoyException, "unable to create filter factory for 'invalid'");
+                            EnvoyException,
+                            "Didn't find a registered implementation for name: 'invalid'");
 }
 
 class TestStatsConfigFactory : public Configuration::NamedNetworkFilterConfigFactory {
@@ -221,9 +222,6 @@ public:
     return [](Network::FilterManager&) -> void {};
   }
   std::string name() override { return "stats_test"; }
-  Configuration::NetworkFilterType type() override {
-    return Configuration::NetworkFilterType::Read;
-  }
 };
 
 TEST_F(ListenerManagerImplWithRealFiltersTest, StatsScopeTest) {

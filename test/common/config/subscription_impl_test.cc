@@ -110,8 +110,8 @@ TEST_P(SubscriptionImplTest, UpdateResources) {
   verifyStats(1, 0, 0, 0);
   deliverConfigUpdate({"cluster0", "cluster1"}, "0", true);
   verifyStats(2, 1, 0, 0);
-  expectSendMessage({"cluster2"}, "0");
   updateResources({"cluster2"});
+  verifyStats(3, 1, 0, 0);
 }
 
 } // namespace
