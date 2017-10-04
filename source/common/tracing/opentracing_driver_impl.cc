@@ -7,6 +7,24 @@
 namespace Envoy {
 namespace Tracing {
 
+namespace {
+class OpenTracingHTTPHeadersWriter : public opentracing::HTTPHeadersWriter {
+public:
+  explicit OpenTracingHTTPHeadersWriter(Http::HeaderMap& request_headers)
+      : request_headers_(request_headers) {}
+
+  // opentracing::HTTPHeadersWriter
+  opentracing::expected<void> Set(opentracing::string_view key,
+                                  opentracing::string_view value) const override {
+    request_headers_.addCopy(Http::LowerCaseString{key}, value);
+    return {};
+  }
+
+private:
+  Http::HeaderMap& request_headers_;
+};
+} // namespace
+
 OpenTracingSpan::OpenTracingSpan(std::unique_ptr<opentracing::Span>&& span)
     : span_(std::move(span)) {
 }
@@ -25,8 +43,9 @@ void OpenTracingSpan::setTag(const std::string& name, const std::string& value) 
 }
 
 void OpenTracingSpan::injectContext(Http::HeaderMap& request_headers) {
+  // Inject the span context using Envoy's single-header format.
   std::ostringstream oss;
-  const opentracing::expected<void> was_successful = span_->tracer().Inject(span_->context(), oss);
+  opentracing::expected<void> was_successful = span_->tracer().Inject(span_->context(), oss);
   if (!was_successful) {
     ENVOY_LOG(warn, "Failed to inject span context: {}", was_successful.error().message());
     return;
@@ -34,6 +53,14 @@ void OpenTracingSpan::injectContext(Http::HeaderMap& request_headers) {
   const std::string current_span_context = oss.str();
   request_headers.insertOtSpanContext().value(
       Base64::encode(current_span_context.c_str(), current_span_context.length()));
+
+  // Also, inject the context using the tracer's standard HTTP header format.
+  OpenTracingHTTPHeadersWriter writer{request_headers};
+  was_successful = span_->tracer().Inject(span_->context(), writer);
+  if (!was_successful) {
+    ENVOY_LOG(warn, "Failed to inject span context: {}", was_successful.error().message());
+    return;
+  }
 }
 
 SpanPtr OpenTracingSpan::spawnChild(const Config&, const std::string& name, SystemTime start_time) {
