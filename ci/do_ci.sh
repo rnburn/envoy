@@ -22,8 +22,7 @@ function bazel_release_binary_build() {
   mkdir -p "${ENVOY_SRCDIR}"/build_release
   cp -f "${ENVOY_DELIVERY_DIR}"/envoy "${ENVOY_SRCDIR}"/build_release
   mkdir -p "${ENVOY_SRCDIR}"/build_release_stripped
-  cp -f "${ENVOY_DELIVERY_DIR}"/envoy "${ENVOY_SRCDIR}"/build_release_stripped
-  strip "${ENVOY_SRCDIR}"/build_release_stripped/envoy
+  strip "${ENVOY_DELIVERY_DIR}"/envoy -o "${ENVOY_SRCDIR}"/build_release_stripped/envoy
 }
 
 function bazel_debug_binary_build() {
@@ -119,6 +118,24 @@ elif [[ "$1" == "bazel.coverage" ]]; then
   cd "${ENVOY_BUILD_DIR}"
   SRCDIR="${GCOVR_DIR}" "${ENVOY_SRCDIR}"/test/run_envoy_bazel_coverage.sh
   rsync -av "${ENVOY_BUILD_DIR}"/bazel-envoy/generated/coverage/ "${ENVOY_COVERAGE_DIR}"
+  exit 0
+elif [[ "$1" == "bazel.coverity" ]]; then
+  # Coverity Scan version 2017.07 fails to analyze the entirely of the Envoy
+  # build when compiled with Clang 5. Revisit when Coverity Scan explicitly
+  # supports Clang 5. Until this issue is resolved, run Coverity Scan with
+  # the GCC toolchain.
+  setup_gcc_toolchain
+  echo "bazel Coverity Scan build"
+  echo "Building..."
+  cd "${ENVOY_CI_DIR}"
+  /build/cov-analysis/bin/cov-build --dir "${ENVOY_BUILD_DIR}"/cov-int bazel --batch build --action_env=LD_PRELOAD ${BAZEL_BUILD_OPTIONS} \
+    -c opt //source/exe:envoy-static.stamped
+  # tar up the coverity results
+  tar czvf "${ENVOY_BUILD_DIR}"/envoy-coverity-output.tgz "${ENVOY_BUILD_DIR}"/cov-int
+  # Copy the Coverity results somewhere that we can access outside of the container.
+  cp -f \
+     "${ENVOY_BUILD_DIR}"/envoy-coverity-output.tgz \
+     "${ENVOY_DELIVERY_DIR}"/envoy-coverity-output.tgz
   exit 0
 elif [[ "$1" == "fix_format" ]]; then
   echo "fix_format..."
