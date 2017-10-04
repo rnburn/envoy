@@ -9,7 +9,6 @@ namespace Tracing {
 
 OpenTracingSpan::OpenTracingSpan(std::unique_ptr<opentracing::Span>&& span)
     : span_(std::move(span)) {
-  // TODO (rnburn): check span_ != nullptr?
 }
 
 void OpenTracingSpan::finishSpan(SpanFinalizer& finalizer) {
@@ -27,7 +26,11 @@ void OpenTracingSpan::setTag(const std::string& name, const std::string& value) 
 
 void OpenTracingSpan::injectContext(Http::HeaderMap& request_headers) {
   std::ostringstream oss;
-  span_->tracer().Inject(span_->context(), oss);
+  const opentracing::expected<void> was_successful = span_->tracer().Inject(span_->context(), oss);
+  if (!was_successful) {
+    ENVOY_LOG(warn, "Failed to inject span context: {}", was_successful.error().message());
+    return;
+  }
   const std::string current_span_context = oss.str();
   request_headers.insertOtSpanContext().value(
       Base64::encode(current_span_context.c_str(), current_span_context.length()));
@@ -52,9 +55,11 @@ SpanPtr OpenTracingDriver::startSpan(const Config&, Http::HeaderMap& request_hea
     opentracing::expected<std::unique_ptr<opentracing::SpanContext>> parent_span_ctx_maybe =
         tracer.Extract(iss);
     std::unique_ptr<opentracing::SpanContext> parent_span_ctx;
-    // TODO (rnburn): What to do if tracer.Extract fails?
     if (parent_span_ctx_maybe) {
       parent_span_ctx = std::move(*parent_span_ctx_maybe);
+    } else {
+      ENVOY_LOG(warn, "Failed to extract span context: {}",
+                parent_span_ctx_maybe.error().message());
     }
     active_span = tracer.StartSpan(operation_name, {opentracing::ChildOf(parent_span_ctx.get()),
                                                     opentracing::StartTimestamp(start_time)});

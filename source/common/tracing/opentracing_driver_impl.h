@@ -4,12 +4,14 @@
 
 #include "envoy/tracing/http_tracer.h"
 
+#include "common/common/logger.h"
+
 #include "opentracing/tracer.h"
 
 namespace Envoy {
 namespace Tracing {
 
-class OpenTracingSpan : public Span {
+class OpenTracingSpan : public Span, Logger::Loggable<Logger::Id::tracing> {
 public:
   explicit OpenTracingSpan(std::unique_ptr<opentracing::Span>&& span);
 
@@ -24,7 +26,7 @@ private:
   std::unique_ptr<opentracing::Span> span_;
 };
 
-class OpenTracingDriver : public Driver {
+class OpenTracingDriver : public Driver, protected Logger::Loggable<Logger::Id::tracing> {
 public:
   // Tracer::TracingDriver
   SpanPtr startSpan(const Config& config, Http::HeaderMap& request_headers, const std::string& operation_name,

@@ -37,6 +37,7 @@ namespace Logger {
   FUNCTION(router)               \
   FUNCTION(runtime)              \
   FUNCTION(testing)              \
+  FUNCTION(tracing)              \
   FUNCTION(upstream)
 
 enum class Id {
