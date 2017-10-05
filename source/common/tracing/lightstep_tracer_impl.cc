@@ -2,9 +2,9 @@
 
 #include <chrono>
 #include <cstdint>
+#include <iostream>
 #include <memory>
 #include <string>
-#include <iostream>
 
 #include "common/common/base64.h"
 #include "common/grpc/common.h"
@@ -39,8 +39,8 @@ public:
 LightStepDriver::LightStepTransporter::LightStepTransporter(LightStepDriver& driver)
     : driver_(driver) {}
 
-void LightStepDriver::LightStepTransporter::Send(const google::protobuf::Message& request,
-                                                 google::protobuf::Message& response,
+void LightStepDriver::LightStepTransporter::Send(const Protobuf::Message& request,
+                                                 Protobuf::Message& response,
                                                  lightstep::AsyncTransporter::Callback& callback) {
   active_callback_ = &callback;
   active_response_ = &response;
@@ -81,8 +81,7 @@ void LightStepDriver::LightStepTransporter::onFailure(Http::AsyncClient::Failure
 }
 
 LightStepDriver::LightStepMetricsObserver::LightStepMetricsObserver(LightStepDriver& driver)
-  : driver_(driver)
-{}
+    : driver_(driver) {}
 
 void LightStepDriver::LightStepMetricsObserver::OnSpansSent(int num_spans) {
   driver_.tracerStats().spans_sent_.add(num_spans);
@@ -135,7 +134,7 @@ LightStepDriver::LightStepDriver(const Json::Object& config,
     tls_options.use_thread = false;
     tls_options.logger_sink = LightStepLogger{};
     tls_options.max_buffered_spans = std::function<size_t()>{[this] {
-      auto result =  runtime_.snapshot().getInteger("tracing.lightstep.min_flush_spans", 5U);
+      auto result = runtime_.snapshot().getInteger("tracing.lightstep.min_flush_spans", 5U);
       return result;
     }};
     tls_options.metrics_observer.reset(new LightStepMetricsObserver{*this});

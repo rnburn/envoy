@@ -1,7 +1,7 @@
 #include <chrono>
 #include <memory>
-#include <string>
 #include <sstream>
+#include <string>
 
 #include "common/common/base64.h"
 #include "common/http/header_map_impl.h"
@@ -39,7 +39,8 @@ namespace Tracing {
 class LightStepDriverTest : public Test {
 public:
   void setup(Json::Object& config, bool init_timer) {
-    std::unique_ptr<lightstep::LightStepTracerOptions> opts(new lightstep::LightStepTracerOptions());
+    std::unique_ptr<lightstep::LightStepTracerOptions> opts(
+        new lightstep::LightStepTracerOptions());
     opts->access_token = "sample_token";
     opts->component_name = "component";
 

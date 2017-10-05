@@ -26,8 +26,7 @@ private:
 } // namespace
 
 OpenTracingSpan::OpenTracingSpan(std::unique_ptr<opentracing::Span>&& span)
-    : span_(std::move(span)) {
-}
+    : span_(std::move(span)) {}
 
 void OpenTracingSpan::finishSpan(SpanFinalizer& finalizer) {
   finalizer.finalize(*this);
@@ -55,7 +54,7 @@ void OpenTracingSpan::injectContext(Http::HeaderMap& request_headers) {
       Base64::encode(current_span_context.c_str(), current_span_context.length()));
 
   // Also, inject the context using the tracer's standard HTTP header format.
-  OpenTracingHTTPHeadersWriter writer{request_headers};
+  const OpenTracingHTTPHeadersWriter writer{request_headers};
   was_successful = span_->tracer().Inject(span_->context(), writer);
   if (!was_successful) {
     ENVOY_LOG(warn, "Failed to inject span context: {}", was_successful.error().message());

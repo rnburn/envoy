@@ -73,8 +73,8 @@ cc_library(
     ]),
     includes = ["thirdparty_build/include"],
     deps = [
-        ":protobuf", 
         ":opentracing",
+        ":protobuf",
     ],
 )
 

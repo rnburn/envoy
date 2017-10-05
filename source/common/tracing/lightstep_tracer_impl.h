@@ -11,13 +11,14 @@
 
 #include "common/http/header_map_impl.h"
 #include "common/http/message_impl.h"
-#include "common/tracing/opentracing_driver_impl.h"
 #include "common/json/json_loader.h"
+#include "common/protobuf/protobuf.h"
+#include "common/tracing/opentracing_driver_impl.h"
 
 #include "lightstep/tracer.h"
 #include "lightstep/transporter.h"
-#include "opentracing/tracer.h"
 #include "opentracing/noop.h"
+#include "opentracing/tracer.h"
 
 namespace Envoy {
 namespace Tracing {
@@ -56,7 +57,7 @@ private:
     explicit LightStepTransporter(LightStepDriver& driver);
 
     // lightstep::AsyncTransporter
-    void Send(const google::protobuf::Message& request, google::protobuf::Message& response,
+    void Send(const Protobuf::Message& request, Protobuf::Message& response,
               lightstep::AsyncTransporter::Callback& callback) override;
 
     // Http::AsyncClient::Callbacks
@@ -65,17 +66,18 @@ private:
 
   private:
     lightstep::AsyncTransporter::Callback* active_callback_ = nullptr;
-    google::protobuf::Message* active_response_ = nullptr;
+    Protobuf::Message* active_response_ = nullptr;
     LightStepDriver& driver_;
   };
 
   class LightStepMetricsObserver : public ::lightstep::MetricsObserver {
-   public:
-     explicit LightStepMetricsObserver(LightStepDriver& driver);
+  public:
+    explicit LightStepMetricsObserver(LightStepDriver& driver);
 
-     void OnSpansSent(int num_spans) override;
-   private:
-     LightStepDriver& driver_;
+    void OnSpansSent(int num_spans) override;
+
+  private:
+    LightStepDriver& driver_;
   };
 
   class TlsLightStepTracer : public ThreadLocal::ThreadLocalObject {
