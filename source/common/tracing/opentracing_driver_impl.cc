@@ -23,6 +23,32 @@ public:
 private:
   Http::HeaderMap& request_headers_;
 };
+
+class OpenTracingHTTPHeadersReader : public opentracing::HTTPHeadersReader {
+public:
+  explicit OpenTracingHTTPHeadersReader(const Http::HeaderMap& request_headers)
+      : request_headers_(request_headers) {}
+
+  typedef std::function<opentracing::expected<void>(opentracing::string_view,
+                                                    opentracing::string_view)>
+      OpenTracingCb;
+
+  // opentracing::HTTPHeadersReader
+  opentracing::expected<void> ForeachKey(OpenTracingCb f) const override {
+    request_headers_.iterate(header_map_callback, static_cast<void*>(&f));
+    return {};
+  }
+
+private:
+  const Http::HeaderMap& request_headers_;
+
+  static void header_map_callback(const Http::HeaderEntry& header, void* context) {
+    OpenTracingCb* callback = static_cast<OpenTracingCb*>(context);
+    opentracing::string_view key{header.key().c_str(), header.key().size()};
+    opentracing::string_view value{header.value().c_str(), header.value().size()};
+    (*callback)(key, value);
+  }
+};
 } // namespace
 
 OpenTracingSpan::OpenTracingSpan(std::unique_ptr<opentracing::Span>&& span)
@@ -75,23 +101,31 @@ SpanPtr OpenTracingDriver::startSpan(const Config&, Http::HeaderMap& request_hea
                                      const std::string& operation_name, SystemTime start_time) {
   const opentracing::Tracer& tracer = this->tracer();
   std::unique_ptr<opentracing::Span> active_span;
+  std::unique_ptr<opentracing::SpanContext> parent_span_ctx;
   if (request_headers.OtSpanContext()) {
     std::string parent_context = Base64::decode(request_headers.OtSpanContext()->value().c_str());
     std::istringstream iss(parent_context);
     opentracing::expected<std::unique_ptr<opentracing::SpanContext>> parent_span_ctx_maybe =
         tracer.Extract(iss);
-    std::unique_ptr<opentracing::SpanContext> parent_span_ctx;
     if (parent_span_ctx_maybe) {
       parent_span_ctx = std::move(*parent_span_ctx_maybe);
     } else {
       ENVOY_LOG(warn, "Failed to extract span context: {}",
                 parent_span_ctx_maybe.error().message());
     }
-    active_span = tracer.StartSpan(operation_name, {opentracing::ChildOf(parent_span_ctx.get()),
-                                                    opentracing::StartTimestamp(start_time)});
   } else {
-    active_span = tracer.StartSpan(operation_name, {opentracing::StartTimestamp(start_time)});
+    const OpenTracingHTTPHeadersReader reader{request_headers};
+    opentracing::expected<std::unique_ptr<opentracing::SpanContext>> parent_span_ctx_maybe =
+        tracer.Extract(reader);
+    if (parent_span_ctx_maybe) {
+      parent_span_ctx = std::move(*parent_span_ctx_maybe);
+    } else {
+      ENVOY_LOG(warn, "Failed to extract span context: {}",
+                parent_span_ctx_maybe.error().message());
+    }
   }
+  active_span = tracer.StartSpan(operation_name, {opentracing::ChildOf(parent_span_ctx.get()),
+                                                  opentracing::StartTimestamp(start_time)});
   if (active_span == nullptr) {
     return nullptr;
   }
