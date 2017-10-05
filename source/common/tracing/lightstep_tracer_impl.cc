@@ -16,6 +16,26 @@
 namespace Envoy {
 namespace Tracing {
 
+namespace {
+class LightStepLogger : Logger::Loggable<Logger::Id::tracing> {
+public:
+  void operator()(lightstep::LogLevel level, opentracing::string_view message) const {
+    fmt::StringRef fmt_message{message.data(), message.size()};
+    switch (level) {
+    case lightstep::LogLevel::debug:
+      ENVOY_LOG(debug, "{}", fmt_message);
+      break;
+    case lightstep::LogLevel::info:
+      ENVOY_LOG(info, "{}", fmt_message);
+      break;
+    default:
+      ENVOY_LOG(warn, "{}", fmt_message);
+      break;
+    }
+  }
+};
+} // namespace
+
 LightStepDriver::LightStepTransporter::LightStepTransporter(LightStepDriver& driver)
     : driver_(driver) {}
 
@@ -113,6 +133,7 @@ LightStepDriver::LightStepDriver(const Json::Object& config,
     tls_options.access_token = options_->access_token;
     tls_options.component_name = options_->component_name;
     tls_options.use_thread = false;
+    tls_options.logger_sink = LightStepLogger{};
     tls_options.max_buffered_spans = std::function<size_t()>{[this] {
       auto result =  runtime_.snapshot().getInteger("tracing.lightstep.min_flush_spans", 5U);
       return result;
