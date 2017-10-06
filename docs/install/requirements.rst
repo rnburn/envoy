@@ -18,8 +18,8 @@ Envoy has the following requirements:
 * `gperftools <https://github.com/gperftools/gperftools>`_ (last tested with 2.6.1)
 * `BoringSSL <https://boringssl.googlesource.com/boringssl>`_ (last tested with sha 14308731e5446a73ac2258688a9688b524483cb6).
 * `protobuf <https://github.com/google/protobuf>`_ (last tested with 3.4.0)
-* `opentracing-cpp <https://github.com/opentracing/opentracing-cpp>`_ (last tested with 0.1)
-* `lightstep-tracer-cpp <https://github.com/lightstep/lightstep-tracer-cpp/>`_ (last tested with 0.36)
+* `opentracing-cpp <https://github.com/opentracing/opentracing-cpp>`_ (last tested with 1.0.0)
+* `lightstep-tracer-cpp <https://github.com/lightstep/lightstep-tracer-cpp/>`_ (last tested with 0.4.0)
 * `rapidjson <https://github.com/miloyip/rapidjson/>`_ (last tested with 1.1.0)
 * `c-ares <https://github.com/c-ares/c-ares>`_ (last tested with 1.13.0)
 * `backward <https://github.com/bombela/backward-cpp>`_ (last tested with 1.3)
