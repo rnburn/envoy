@@ -51,8 +51,10 @@ private:
 };
 } // namespace
 
-OpenTracingSpan::OpenTracingSpan(std::unique_ptr<opentracing::Span>&& span)
-    : span_(std::move(span)) {}
+OpenTracingSpan::OpenTracingSpan(bool use_single_header_propagation, bool use_tracer_propagation,
+                                 std::unique_ptr<opentracing::Span>&& span)
+    : use_single_header_propagation_(use_single_header_propagation),
+      use_tracer_propagation_(use_tracer_propagation), span_(std::move(span)) {}
 
 void OpenTracingSpan::finishSpan(SpanFinalizer& finalizer) {
   finalizer.finalize(*this);
@@ -68,23 +70,29 @@ void OpenTracingSpan::setTag(const std::string& name, const std::string& value) 
 }
 
 void OpenTracingSpan::injectContext(Http::HeaderMap& request_headers) {
-  // Inject the span context using Envoy's single-header format.
-  std::ostringstream oss;
-  opentracing::expected<void> was_successful = span_->tracer().Inject(span_->context(), oss);
-  if (!was_successful) {
-    ENVOY_LOG(warn, "Failed to inject span context: {}", was_successful.error().message());
-    return;
+  if (use_single_header_propagation_) {
+    // Inject the span context using Envoy's single-header format.
+    std::ostringstream oss;
+    const opentracing::expected<void> was_successful =
+        span_->tracer().Inject(span_->context(), oss);
+    if (!was_successful) {
+      ENVOY_LOG(warn, "Failed to inject span context: {}", was_successful.error().message());
+      return;
+    }
+    const std::string current_span_context = oss.str();
+    request_headers.insertOtSpanContext().value(
+        Base64::encode(current_span_context.c_str(), current_span_context.length()));
   }
-  const std::string current_span_context = oss.str();
-  request_headers.insertOtSpanContext().value(
-      Base64::encode(current_span_context.c_str(), current_span_context.length()));
 
-  // Also, inject the context using the tracer's standard HTTP header format.
-  const OpenTracingHTTPHeadersWriter writer{request_headers};
-  was_successful = span_->tracer().Inject(span_->context(), writer);
-  if (!was_successful) {
-    ENVOY_LOG(warn, "Failed to inject span context: {}", was_successful.error().message());
-    return;
+  if (use_tracer_propagation_) {
+    // Inject the context using the tracer's standard HTTP header format.
+    const OpenTracingHTTPHeadersWriter writer{request_headers};
+    const opentracing::expected<void> was_successful =
+        span_->tracer().Inject(span_->context(), writer);
+    if (!was_successful) {
+      ENVOY_LOG(warn, "Failed to inject span context: {}", was_successful.error().message());
+      return;
+    }
   }
 }
 
@@ -94,15 +102,18 @@ SpanPtr OpenTracingSpan::spawnChild(const Config&, const std::string& name, Syst
   if (ot_span == nullptr) {
     return nullptr;
   }
-  return SpanPtr{new OpenTracingSpan(std::move(ot_span))};
+  return SpanPtr{new OpenTracingSpan{use_single_header_propagation_, use_tracer_propagation_,
+                                     std::move(ot_span)}};
 }
 
 SpanPtr OpenTracingDriver::startSpan(const Config&, Http::HeaderMap& request_headers,
                                      const std::string& operation_name, SystemTime start_time) {
+  const bool use_single_header_propagation = this->useSingleHeaderPropagation();
+  const bool use_tracer_propagation = this->useTracerPropagation();
   const opentracing::Tracer& tracer = this->tracer();
   std::unique_ptr<opentracing::Span> active_span;
   std::unique_ptr<opentracing::SpanContext> parent_span_ctx;
-  if (request_headers.OtSpanContext()) {
+  if (use_single_header_propagation && request_headers.OtSpanContext()) {
     std::string parent_context = Base64::decode(request_headers.OtSpanContext()->value().c_str());
     std::istringstream iss(parent_context);
     opentracing::expected<std::unique_ptr<opentracing::SpanContext>> parent_span_ctx_maybe =
@@ -113,7 +124,7 @@ SpanPtr OpenTracingDriver::startSpan(const Config&, Http::HeaderMap& request_hea
       ENVOY_LOG(warn, "Failed to extract span context: {}",
                 parent_span_ctx_maybe.error().message());
     }
-  } else {
+  } else if (use_tracer_propagation) {
     const OpenTracingHTTPHeadersReader reader{request_headers};
     opentracing::expected<std::unique_ptr<opentracing::SpanContext>> parent_span_ctx_maybe =
         tracer.Extract(reader);
@@ -129,7 +140,8 @@ SpanPtr OpenTracingDriver::startSpan(const Config&, Http::HeaderMap& request_hea
   if (active_span == nullptr) {
     return nullptr;
   }
-  return SpanPtr{new OpenTracingSpan(std::move(active_span))};
+  return SpanPtr{new OpenTracingSpan{use_single_header_propagation, use_tracer_propagation,
+                                     std::move(active_span)}};
 }
 
 } // namespace Tracing

@@ -13,7 +13,8 @@ namespace Tracing {
 
 class OpenTracingSpan : public Span, Logger::Loggable<Logger::Id::tracing> {
 public:
-  explicit OpenTracingSpan(std::unique_ptr<opentracing::Span>&& span);
+  OpenTracingSpan(bool use_single_header_propagation, bool use_tracer_propagation,
+                  std::unique_ptr<opentracing::Span>&& span);
 
   // Tracing::Span
   void finishSpan(SpanFinalizer& finalizer) override;
@@ -23,6 +24,8 @@ public:
   SpanPtr spawnChild(const Config& config, const std::string& name, SystemTime start_time) override;
 
 private:
+  bool use_single_header_propagation_;
+  bool use_tracer_propagation_;
   std::unique_ptr<opentracing::Span> span_;
 };
 
@@ -33,6 +36,9 @@ public:
                     const std::string& operation_name, SystemTime start_time) override;
 
   virtual const opentracing::Tracer& tracer() const = 0;
+
+  virtual bool useSingleHeaderPropagation() const { return true; }
+  virtual bool useTracerPropagation() const { return true; }
 };
 
 } // namespace Tracing

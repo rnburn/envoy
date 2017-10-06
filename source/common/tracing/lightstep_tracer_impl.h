@@ -45,6 +45,7 @@ public:
 
   // Tracer::OpenTracingDriver
   const opentracing::Tracer& tracer() const override;
+  bool useTracerPropagation() const override { return false; }
 
   Upstream::ClusterManager& clusterManager() { return cm_; }
   Upstream::ClusterInfoConstSharedPtr cluster() { return cluster_; }
