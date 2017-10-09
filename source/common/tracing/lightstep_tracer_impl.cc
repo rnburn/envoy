@@ -62,7 +62,7 @@ void LightStepDriver::LightStepTransporter::onSuccess(Http::MessagePtr&& respons
 
     Grpc::Common::chargeStat(*driver_.cluster(), lightstep::CollectorServiceFullName(),
                              lightstep::CollectorMethodName(), true);
-    if (!active_response_->ParseFromString(response->bodyAsString())) {
+    if (!Grpc::Common::deserializeBody(response->bodyAsString(), *active_response_)) {
       throw EnvoyException("Failed to parse LightStep collector response");
     }
     active_callback_->OnSuccess();
