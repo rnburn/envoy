@@ -4,7 +4,7 @@ set -e
 
 VERSION=0.4.0
 
-git clone -b v$VERSION https://github.com/lightstep/lightstep-tracer-cpp.git
+git clone -b envoy https://github.com/rnburn/lightstep-tracer-cpp-1.git lightstep-tracer-cpp
 cd lightstep-tracer-cpp
 mkdir .build
 cd .build
@@ -13,5 +13,5 @@ cmake .. \
   -DCMAKE_INSTALL_PREFIX=$THIRDPARTY_BUILD \
   -DBUILD_TESTING=OFF \
   -DENABLE_LINTING=OFF \
-  -DLS_WITH_GRPC=OFF
+  -DWITH_GRPC=OFF
 make V=1 install
