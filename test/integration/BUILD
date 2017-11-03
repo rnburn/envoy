@@ -190,6 +190,7 @@ envoy_cc_test_library(
 envoy_cc_test_library(
     name = "integration_lib",
     srcs = [
+        "autonomous_upstream.cc",
         "fake_upstream.cc",
         "integration.cc",
         "server.cc",
@@ -197,6 +198,7 @@ envoy_cc_test_library(
         "utility.cc",
     ],
     hdrs = [
+        "autonomous_upstream.h",
         "fake_upstream.h",
         "integration.h",
         "server.h",
@@ -302,6 +304,17 @@ envoy_cc_test(
     deps = [
         ":integration_lib",
         "//test/server:utility_lib",
+    ],
+)
+
+envoy_cc_test(
+    name = "load_stats_integration_test",
+    srcs = ["load_stats_integration_test.cc"],
+    external_deps = ["envoy_eds"],
+    deps = [
+        ":http_integration_lib",
+        "//source/common/config:resources_lib",
+        "//test/test_common:network_utility_lib",
     ],
 )
 

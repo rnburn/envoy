@@ -42,11 +42,15 @@ public:
 private:
   const Http::HeaderMap& request_headers_;
 
-  static void header_map_callback(const Http::HeaderEntry& header, void* context) {
+  static Http::HeaderMap::Iterate header_map_callback(const Http::HeaderEntry& header, void* context) {
     OpenTracingCb* callback = static_cast<OpenTracingCb*>(context);
     opentracing::string_view key{header.key().c_str(), header.key().size()};
     opentracing::string_view value{header.value().c_str(), header.value().size()};
-    (*callback)(key, value);
+    if ((*callback)(key, value)) {
+      return Http::HeaderMap::Iterate::Continue;
+    } else {
+      return Http::HeaderMap::Iterate::Break;
+    }
   }
 };
 } // namespace
@@ -56,8 +60,7 @@ OpenTracingSpan::OpenTracingSpan(bool use_single_header_propagation, bool use_tr
     : use_single_header_propagation_(use_single_header_propagation),
       use_tracer_propagation_(use_tracer_propagation), span_(std::move(span)) {}
 
-void OpenTracingSpan::finishSpan(SpanFinalizer& finalizer) {
-  finalizer.finalize(*this);
+void OpenTracingSpan::finishSpan() {
   span_->Finish();
 }
 

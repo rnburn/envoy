@@ -9,6 +9,7 @@
 #include "envoy/network/connection.h"
 #include "envoy/network/filter.h"
 #include "envoy/stats/stats_macros.h"
+#include "envoy/stats/timespan.h"
 #include "envoy/upstream/cluster_manager.h"
 #include "envoy/upstream/upstream.h"
 
@@ -100,7 +101,8 @@ public:
   void initializeReadFilterCallbacks(Network::ReadFilterCallbacks& callbacks) override;
 
   // Upstream::LoadBalancerContext
-  Optional<uint64_t> hashKey() const override { return {}; }
+  Optional<uint64_t> computeHashKey() override { return {}; }
+  const Router::MetadataMatchCriteria* metadataMatchCriteria() const override { return nullptr; }
   const Network::Connection* downstreamConnection() const override {
     return &read_callbacks_->connection();
   }

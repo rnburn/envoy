@@ -31,9 +31,9 @@ namespace Envoy {
 namespace Router {
 namespace {
 
-envoy::api::v2::filter::HttpConnectionManager
+envoy::api::v2::filter::http::HttpConnectionManager
 parseHttpConnectionManagerFromJson(const std::string& json_string) {
-  envoy::api::v2::filter::HttpConnectionManager http_connection_manager;
+  envoy::api::v2::filter::http::HttpConnectionManager http_connection_manager;
   auto json_object_ptr = Json::Factory::loadFromString(json_string);
   Envoy::Config::FilterJson::translateHttpConnectionManager(*json_object_ptr,
                                                             http_connection_manager);
@@ -65,7 +65,7 @@ public:
       "codec_type": "auto",
       "stat_prefix": "foo",
       "filters": [
-        { "type": "both", "name": "http_dynamo_filter", "config": {} }
+        { "name": "http_dynamo_filter", "config": {} }
       ]
     }
     )EOF";
@@ -122,7 +122,7 @@ TEST_F(RdsImplTest, RdsAndStatic) {
       "codec_type": "auto",
       "stat_prefix": "foo",
       "filters": [
-        { "type": "both", "name": "http_dynamo_filter", "config": {} }
+        { "name": "http_dynamo_filter", "config": {} }
       ]
     }
     )EOF";
@@ -143,7 +143,7 @@ TEST_F(RdsImplTest, LocalInfoNotDefined) {
       "codec_type": "auto",
       "stat_prefix": "foo",
       "filters": [
-        { "type": "both", "name": "http_dynamo_filter", "config": {} }
+        { "name": "http_dynamo_filter", "config": {} }
       ]
     }
     )EOF";
@@ -166,7 +166,7 @@ TEST_F(RdsImplTest, UnknownCluster) {
       "codec_type": "auto",
       "stat_prefix": "foo",
       "filters": [
-        { "type": "both", "name": "http_dynamo_filter", "config": {} }
+        { "name": "http_dynamo_filter", "config": {} }
       ]
     }
     )EOF";
@@ -213,6 +213,7 @@ TEST_F(RdsImplTest, Basic) {
   EXPECT_EQ(Http::Code::OK, handler_callback_("/routes", data));
   EXPECT_EQ(routes_expected_output_no_routes, TestUtility::bufferToString(data));
   data.drain(data.length());
+  EXPECT_EQ(0UL, store_.gauge("foo.rds.foo_route_config.version").value());
 
   // Initial request.
   const std::string response1_json = R"EOF(
@@ -243,6 +244,7 @@ TEST_F(RdsImplTest, Basic) {
   EXPECT_EQ(Http::Code::OK, handler_callback_("/routes", data));
   EXPECT_EQ(routes_expected_output_only_name, TestUtility::bufferToString(data));
   data.drain(data.length());
+  EXPECT_EQ(1580011435426663819U, store_.gauge("foo.rds.foo_route_config.version").value());
 
   expectRequest();
   interval_timer_->callback_();
@@ -260,6 +262,7 @@ TEST_F(RdsImplTest, Basic) {
   EXPECT_EQ(Http::Code::OK, handler_callback_("/routes", data));
   EXPECT_EQ(routes_expected_output_only_name, TestUtility::bufferToString(data));
   data.drain(data.length());
+  EXPECT_EQ(1580011435426663819U, store_.gauge("foo.rds.foo_route_config.version").value());
 
   expectRequest();
   interval_timer_->callback_();
@@ -317,6 +320,7 @@ TEST_F(RdsImplTest, Basic) {
   EXPECT_EQ(Http::Code::OK, handler_callback_("/routes", data));
   EXPECT_EQ(routes_expected_output_full_table, TestUtility::bufferToString(data));
   data.drain(data.length());
+  EXPECT_EQ(8808926191882896258U, store_.gauge("foo.rds.foo_route_config.version").value());
 
   // Test that we get the same dump if we specify the route name.
   EXPECT_EQ(Http::Code::OK, handler_callback_("/routes?route_config_name=foo_route_config", data));
@@ -341,9 +345,10 @@ TEST_F(RdsImplTest, Basic) {
   // Old config use count should be 1 now.
   EXPECT_EQ(1, config.use_count());
 
-  EXPECT_EQ(2UL, store_.counter("foo.rds.config_reload").value());
-  EXPECT_EQ(3UL, store_.counter("foo.rds.update_attempt").value());
-  EXPECT_EQ(3UL, store_.counter("foo.rds.update_success").value());
+  EXPECT_EQ(2UL, store_.counter("foo.rds.foo_route_config.config_reload").value());
+  EXPECT_EQ(3UL, store_.counter("foo.rds.foo_route_config.update_attempt").value());
+  EXPECT_EQ(3UL, store_.counter("foo.rds.foo_route_config.update_success").value());
+  EXPECT_EQ(8808926191882896258U, store_.gauge("foo.rds.foo_route_config.version").value());
 }
 
 TEST_F(RdsImplTest, Failure) {
@@ -371,8 +376,8 @@ TEST_F(RdsImplTest, Failure) {
   EXPECT_CALL(*interval_timer_, enableTimer(_));
   callbacks_->onFailure(Http::AsyncClient::FailureReason::Reset);
 
-  EXPECT_EQ(2UL, store_.counter("foo.rds.update_attempt").value());
-  EXPECT_EQ(2UL, store_.counter("foo.rds.update_failure").value());
+  EXPECT_EQ(2UL, store_.counter("foo.rds.foo_route_config.update_attempt").value());
+  EXPECT_EQ(2UL, store_.counter("foo.rds.foo_route_config.update_failure").value());
 }
 
 TEST_F(RdsImplTest, FailureArray) {
@@ -392,8 +397,8 @@ TEST_F(RdsImplTest, FailureArray) {
   EXPECT_CALL(*interval_timer_, enableTimer(_));
   callbacks_->onSuccess(std::move(message));
 
-  EXPECT_EQ(1UL, store_.counter("foo.rds.update_attempt").value());
-  EXPECT_EQ(1UL, store_.counter("foo.rds.update_failure").value());
+  EXPECT_EQ(1UL, store_.counter("foo.rds.foo_route_config.update_attempt").value());
+  EXPECT_EQ(1UL, store_.counter("foo.rds.foo_route_config.update_failure").value());
 }
 
 class RouteConfigProviderManagerImplTest : public testing::Test {
@@ -423,7 +428,7 @@ TEST_F(RouteConfigProviderManagerImplTest, Basic) {
     )EOF";
 
   Json::ObjectSharedPtr config = Json::Factory::loadFromString(config_json);
-  envoy::api::v2::filter::Rds rds;
+  envoy::api::v2::filter::http::Rds rds;
   Envoy::Config::Utility::translateRdsConfig(*config, rds);
 
   // Get a RouteConfigProvider. This one should create an entry in the RouteConfigProviderManager.
@@ -446,7 +451,7 @@ TEST_F(RouteConfigProviderManagerImplTest, Basic) {
     )EOF";
 
   Json::ObjectSharedPtr config2 = Json::Factory::loadFromString(config_json2);
-  envoy::api::v2::filter::Rds rds2;
+  envoy::api::v2::filter::http::Rds rds2;
   Envoy::Config::Utility::translateRdsConfig(*config2, rds2);
 
   RouteConfigProviderSharedPtr provider3 = route_config_provider_manager_.getRouteConfigProvider(
@@ -488,7 +493,7 @@ TEST_F(RouteConfigProviderManagerImplTest, onConfigUpdateEmpty) {
     )EOF";
 
   Json::ObjectSharedPtr config = Json::Factory::loadFromString(config_json);
-  envoy::api::v2::filter::Rds rds;
+  envoy::api::v2::filter::http::Rds rds;
   Envoy::Config::Utility::translateRdsConfig(*config, rds);
 
   // Get a RouteConfigProvider. This one should create an entry in the RouteConfigProviderManager.
@@ -498,7 +503,7 @@ TEST_F(RouteConfigProviderManagerImplTest, onConfigUpdateEmpty) {
   auto& provider_impl = dynamic_cast<RdsRouteConfigProviderImpl&>(*provider.get());
   EXPECT_CALL(init_manager_.initialized_, ready());
   provider_impl.onConfigUpdate({});
-  EXPECT_EQ(1UL, store_.counter("foo_prefix.rds.update_empty").value());
+  EXPECT_EQ(1UL, store_.counter("foo_prefix.rds.foo_route_config.update_empty").value());
 }
 
 TEST_F(RouteConfigProviderManagerImplTest, onConfigUpdateWrongSize) {
@@ -511,7 +516,7 @@ TEST_F(RouteConfigProviderManagerImplTest, onConfigUpdateWrongSize) {
     )EOF";
 
   Json::ObjectSharedPtr config = Json::Factory::loadFromString(config_json);
-  envoy::api::v2::filter::Rds rds;
+  envoy::api::v2::filter::http::Rds rds;
   Envoy::Config::Utility::translateRdsConfig(*config, rds);
 
   // Get a RouteConfigProvider. This one should create an entry in the RouteConfigProviderManager.

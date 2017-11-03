@@ -19,6 +19,7 @@
 #include "common/upstream/upstream_impl.h"
 
 #include "test/common/upstream/utility.h"
+#include "test/integration/autonomous_upstream.h"
 #include "test/integration/utility.h"
 #include "test/mocks/upstream/mocks.h"
 #include "test/test_common/environment.h"
@@ -39,19 +40,19 @@ std::string normalizeDate(const std::string& s) {
   return std::regex_replace(s, date_regex, "date: Mon, 01 Jan 2017 00:00:00 GMT");
 }
 
-void setAllowAbsoluteUrl(envoy::api::v2::filter::HttpConnectionManager& hcm) {
+void setAllowAbsoluteUrl(envoy::api::v2::filter::http::HttpConnectionManager& hcm) {
   envoy::api::v2::Http1ProtocolOptions options;
   options.mutable_allow_absolute_url()->set_value(true);
   hcm.mutable_http_protocol_options()->CopyFrom(options);
 };
 
-envoy::api::v2::filter::HttpConnectionManager::CodecType
+envoy::api::v2::filter::http::HttpConnectionManager::CodecType
 typeToCodecType(Http::CodecClient::Type type) {
   switch (type) {
   case Http::CodecClient::Type::HTTP1:
-    return envoy::api::v2::filter::HttpConnectionManager::HTTP1;
+    return envoy::api::v2::filter::http::HttpConnectionManager::HTTP1;
   case Http::CodecClient::Type::HTTP2:
-    return envoy::api::v2::filter::HttpConnectionManager::HTTP2;
+    return envoy::api::v2::filter::http::HttpConnectionManager::HTTP2;
   default:
     RELEASE_ASSERT(0);
   }
@@ -159,7 +160,11 @@ void HttpIntegrationTest::initialize() {
 }
 
 void HttpIntegrationTest::createUpstreams() {
-  fake_upstreams_.emplace_back(new FakeUpstream(0, upstream_protocol_, version_));
+  if (autonomous_upstream_) {
+    fake_upstreams_.emplace_back(new AutonomousUpstream(0, upstream_protocol_, version_));
+  } else {
+    fake_upstreams_.emplace_back(new FakeUpstream(0, upstream_protocol_, version_));
+  }
   ports_.push_back(fake_upstreams_.back()->localAddress()->ip()->port());
 }
 
@@ -241,7 +246,7 @@ void HttpIntegrationTest::waitForNextUpstreamRequest() {
     fake_upstream_connection_ = fake_upstreams_[0]->waitForHttpConnection(*dispatcher_);
   }
   // Wait for the next stream on the upstream connection.
-  upstream_request_ = fake_upstream_connection_->waitForNewStream();
+  upstream_request_ = fake_upstream_connection_->waitForNewStream(*dispatcher_);
   // Wait for the stream to be completely received.
   upstream_request_->waitForEndStream(*dispatcher_);
 }
@@ -370,7 +375,7 @@ void HttpIntegrationTest::testRouterUpstreamDisconnectBeforeRequestComplete() {
 
   fake_upstream_connection_ = fake_upstreams_[0]->waitForHttpConnection(*dispatcher_);
 
-  upstream_request_ = fake_upstream_connection_->waitForNewStream();
+  upstream_request_ = fake_upstream_connection_->waitForNewStream(*dispatcher_);
   upstream_request_->waitForHeadersComplete();
   fake_upstream_connection_->close();
   fake_upstream_connection_->waitForDisconnect();
@@ -432,7 +437,7 @@ void HttpIntegrationTest::testRouterDownstreamDisconnectBeforeRequestComplete(
                                                       {":authority", "host"}},
                               *response_);
   fake_upstream_connection_ = fake_upstreams_[0]->waitForHttpConnection(*dispatcher_);
-  upstream_request_ = fake_upstream_connection_->waitForNewStream();
+  upstream_request_ = fake_upstream_connection_->waitForNewStream(*dispatcher_);
   upstream_request_->waitForHeadersComplete();
   codec_client_->close();
 
@@ -491,7 +496,7 @@ void HttpIntegrationTest::testRouterUpstreamResponseBeforeRequestComplete() {
                                                       {":authority", "host"}},
                               *response_);
   fake_upstream_connection_ = fake_upstreams_[0]->waitForHttpConnection(*dispatcher_);
-  upstream_request_ = fake_upstream_connection_->waitForNewStream();
+  upstream_request_ = fake_upstream_connection_->waitForNewStream(*dispatcher_);
   upstream_request_->waitForHeadersComplete();
   upstream_request_->encodeHeaders(Http::TestHeaderMapImpl{{":status", "200"}}, false);
   upstream_request_->encodeData(512, true);

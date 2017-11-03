@@ -48,6 +48,7 @@ public:
   void encodeTrailers(const Http::HeaderMapImpl& trailers);
   void encodeResetStream();
   const Http::HeaderMap& headers() { return *headers_; }
+  void setAddServedByHeader(bool add_header) { add_served_by_header_ = add_header; }
   const Http::HeaderMapPtr& trailers() { return trailers_; }
   void waitForHeadersComplete();
   void waitForData(Event::Dispatcher& client_dispatcher, uint64_t body_length);
@@ -60,6 +61,7 @@ public:
   template <class T> void sendGrpcMessage(const T& message) {
     auto serialized_response = Grpc::Common::serializeBody(message);
     encodeData(*serialized_response, false);
+    ENVOY_LOG(debug, "Sent gRPC message: {}", message.DebugString());
   }
   template <class T> void decodeGrpcFrame(T& message) {
     EXPECT_GE(decoded_grpc_frames_.size(), 1);
@@ -99,18 +101,23 @@ public:
   void onAboveWriteBufferHighWatermark() override {}
   void onBelowWriteBufferLowWatermark() override {}
 
+  virtual void setEndStream(bool end) { end_stream_ = end; }
+
+protected:
+  Http::HeaderMapPtr headers_;
+
 private:
   FakeHttpConnection& parent_;
   Http::StreamEncoder& encoder_;
   std::mutex lock_;
   std::condition_variable decoder_event_;
-  Http::HeaderMapPtr headers_;
   Http::HeaderMapPtr trailers_;
   bool end_stream_{};
   Buffer::OwnedImpl body_;
   bool saw_reset_{};
   Grpc::Decoder grpc_decoder_;
   std::vector<Grpc::Frame> decoded_grpc_frames_;
+  bool add_served_by_header_{};
 };
 
 typedef std::unique_ptr<FakeStream> FakeStreamPtr;
@@ -209,7 +216,8 @@ public:
   // By default waitForNewStream assumes the next event is a new stream and
   // fails an assert if an unexpected event occurs.  If a caller truly wishes to
   // wait for a new stream, set ignore_spurious_events = true.
-  FakeStreamPtr waitForNewStream(bool ignore_spurious_events = false);
+  FakeStreamPtr waitForNewStream(Event::Dispatcher& client_dispatcher,
+                                 bool ignore_spurious_events = false);
 
   // Http::ServerConnectionCallbacks
   Http::StreamDecoder& newStream(Http::StreamEncoder& response_encoder) override;
@@ -278,9 +286,19 @@ public:
   FakeRawConnectionPtr waitForRawConnection();
   Network::Address::InstanceConstSharedPtr localAddress() const { return socket_->localAddress(); }
 
+  // Wait for one of the upstreams to receive a connection
+  static FakeHttpConnectionPtr
+  waitForHttpConnection(Event::Dispatcher& client_dispatcher,
+                        std::vector<std::unique_ptr<FakeUpstream>>& upstreams);
+
   // Network::FilterChainFactory
   bool createFilterChain(Network::Connection& connection) override;
   void set_allow_unexpected_disconnects(bool value) { allow_unexpected_disconnects_ = value; }
+
+protected:
+  Stats::IsolatedStoreImpl stats_store_;
+  const FakeHttpConnection::Type http_type_;
+  void cleanUp();
 
 private:
   FakeUpstream(Ssl::ServerContext* ssl_ctx, Network::ListenSocketPtr&& connection,
@@ -290,15 +308,15 @@ private:
   Ssl::ServerContext* ssl_ctx_{};
   Network::ListenSocketPtr socket_;
   ConditionalInitializer server_initialized_;
-  Thread::ThreadPtr thread_;
+  // Guards any objects which can be altered both in the upstream thread and the
+  // main test thread.
   std::mutex lock_;
+  Thread::ThreadPtr thread_;
   std::condition_variable new_connection_event_;
-  Stats::IsolatedStoreImpl stats_store_;
   Api::ApiPtr api_;
   Event::DispatcherPtr dispatcher_;
   Network::ConnectionHandlerPtr handler_;
-  std::list<QueuedConnectionWrapperPtr> new_connections_;
-  FakeHttpConnection::Type http_type_;
+  std::list<QueuedConnectionWrapperPtr> new_connections_; // Guarded by lock_
   bool allow_unexpected_disconnects_;
 };
 } // namespace Envoy

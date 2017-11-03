@@ -7,6 +7,7 @@
 #include "common/config/utility.h"
 #include "common/config/well_known_names.h"
 #include "common/network/address_impl.h"
+#include "common/network/resolver_impl.h"
 #include "common/network/utility.h"
 #include "common/upstream/sds_subscription.h"
 
@@ -60,7 +61,7 @@ void EdsClusterImpl::onConfigUpdate(const ResourceVector& resources) {
   for (const auto& locality_lb_endpoint : cluster_load_assignment.endpoints()) {
     for (const auto& lb_endpoint : locality_lb_endpoint.lb_endpoints()) {
       new_hosts.emplace_back(new HostImpl(
-          info_, "", Network::Utility::fromProtoAddress(lb_endpoint.endpoint().address()),
+          info_, "", Network::Address::resolveProtoAddress(lb_endpoint.endpoint().address()),
           lb_endpoint.metadata(), lb_endpoint.load_balancing_weight().value(),
           locality_lb_endpoint.locality()));
     }
@@ -76,6 +77,7 @@ void EdsClusterImpl::onConfigUpdate(const ResourceVector& resources) {
 
     // If local locality is not defined then skip populating per locality hosts.
     const Locality local_locality(local_info_.node().locality());
+    ENVOY_LOG(trace, "Local locality: {}", local_info_.node().locality().DebugString());
     if (!local_locality.empty()) {
       std::map<Locality, std::vector<HostSharedPtr>> hosts_per_locality;
 
@@ -101,8 +103,19 @@ void EdsClusterImpl::onConfigUpdate(const ResourceVector& resources) {
     if (initialize_callback_ && health_checker_ && pending_health_checks_ == 0) {
       pending_health_checks_ = hosts().size();
       ASSERT(pending_health_checks_ > 0);
+
+      // Every time a host changes HC state we cause a full healthy host recalculation which
+      // for expensive LBs (ring, subset, etc.) can be quite time consuming. During startup, this
+      // can also block worker threads by doing this repeatedly. There is no reason to do this
+      // as we will not start taking traffic until we are initialized. By blocking HC updates
+      // while initializing we can avoid this. When HC responses for all hosts have arrived and
+      // we are about to initialize, we unblock further HC updates which has the additional effect
+      // of forcing a healthy host recalculation.
+      // TODO(mattklein123): Add similar logic for the DNS clusters.
+      blockHcUpdates(true);
       health_checker_->addHostCheckCompleteCb([this](HostSharedPtr, bool) -> void {
         if (pending_health_checks_ > 0 && --pending_health_checks_ == 0) {
+          blockHcUpdates(false);
           initialize_callback_();
           initialize_callback_ = nullptr;
         }

@@ -232,36 +232,29 @@ TEST_F(ClusterManagerImplTest, UnknownHcType) {
   EXPECT_THROW(create(parseBootstrapFromJson(json)), EnvoyException);
 }
 
-TEST_F(ClusterManagerImplTest, MaxClusterName) {
+TEST_F(ClusterManagerImplTest, ValidClusterName) {
   const std::string json = R"EOF(
   {
     "clusters": [
     {
-      "name": "clusterwithareallyreallylongnamemorethanmaxcharsallowedbyschema"
+      "name": "cluster:name",
+      "connect_timeout_ms": 250,
+      "type": "static",
+      "lb_type": "round_robin",
+      "hosts": [{"url": "tcp://127.0.0.1:11001"}]
     }]
   }
   )EOF";
 
-  EXPECT_THROW_WITH_MESSAGE(create(parseBootstrapFromJson(json)), Json::Exception,
-                            "JSON at lines 4-6 does not conform to schema.\n Invalid schema: "
-                            "#/properties/name\n Schema violation: maxLength\n Offending "
-                            "document key: #/name");
-}
-
-TEST_F(ClusterManagerImplTest, InvalidClusterNameChars) {
-  const std::string json = R"EOF(
-  {
-    "clusters": [
-    {
-      "name": "cluster:"
-    }]
-  }
-  )EOF";
-
-  EXPECT_THROW_WITH_MESSAGE(create(parseBootstrapFromJson(json)), Json::Exception,
-                            "JSON at lines 4-6 does not conform to schema.\n Invalid schema: "
-                            "#/properties/name\n Schema violation: pattern\n Offending document "
-                            "key: #/name");
+  create(parseBootstrapFromJson(json));
+  cluster_manager_->clusters()
+      .find("cluster:name")
+      ->second.get()
+      .info()
+      ->statsScope()
+      .counter("foo")
+      .inc();
+  EXPECT_EQ(1UL, factory_.stats_.counter("cluster.cluster_name.foo").value());
 }
 
 TEST_F(ClusterManagerImplTest, OriginalDstLbRestriction) {
@@ -299,6 +292,57 @@ TEST_F(ClusterManagerImplTest, OriginalDstLbRestriction2) {
   EXPECT_THROW_WITH_MESSAGE(
       create(parseBootstrapFromJson(json)), EnvoyException,
       "cluster: LB type 'original_dst_lb' may only be used with cluser type 'original_dst'");
+}
+
+TEST_F(ClusterManagerImplTest, SubsetLoadBalancerInitialization) {
+  const std::string json = R"EOF(
+  {
+    "clusters": [
+    {
+      "name": "cluster_1",
+      "connect_timeout_ms": 250,
+      "type": "static",
+      "lb_type": "round_robin",
+      "hosts": [{"url": "tcp://127.0.0.1:8000"}, {"url": "tcp://127.0.0.1:8001"}]
+    }]
+  }
+  )EOF";
+
+  envoy::api::v2::Bootstrap bootstrap = parseBootstrapFromJson(json);
+  envoy::api::v2::Cluster::LbSubsetConfig* subset_config =
+      bootstrap.mutable_static_resources()->mutable_clusters(0)->mutable_lb_subset_config();
+  subset_config->set_fallback_policy(envoy::api::v2::Cluster::LbSubsetConfig::ANY_ENDPOINT);
+  subset_config->add_subset_selectors()->add_keys("x");
+
+  create(bootstrap);
+
+  EXPECT_EQ(1UL, factory_.stats_.gauge("cluster_manager.total_clusters").value());
+
+  factory_.tls_.shutdownThread();
+}
+
+TEST_F(ClusterManagerImplTest, SubsetLoadBalancerRestriction) {
+  const std::string json = R"EOF(
+  {
+    "clusters": [
+    {
+      "name": "cluster_1",
+      "connect_timeout_ms": 250,
+      "type": "original_dst",
+      "lb_type": "original_dst_lb"
+    }]
+  }
+  )EOF";
+
+  envoy::api::v2::Bootstrap bootstrap = parseBootstrapFromJson(json);
+  envoy::api::v2::Cluster::LbSubsetConfig* subset_config =
+      bootstrap.mutable_static_resources()->mutable_clusters(0)->mutable_lb_subset_config();
+  subset_config->set_fallback_policy(envoy::api::v2::Cluster::LbSubsetConfig::ANY_ENDPOINT);
+  subset_config->add_subset_selectors()->add_keys("x");
+
+  EXPECT_THROW_WITH_MESSAGE(
+      create(bootstrap), EnvoyException,
+      "cluster: cluster type 'original_dst' may not be used with lb_subset_config");
 }
 
 TEST_F(ClusterManagerImplTest, TcpHealthChecker) {

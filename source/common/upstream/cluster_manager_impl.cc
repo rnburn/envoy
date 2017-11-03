@@ -19,6 +19,7 @@
 #include "common/http/http1/conn_pool.h"
 #include "common/http/http2/conn_pool.h"
 #include "common/json/config_schemas.h"
+#include "common/network/resolver_impl.h"
 #include "common/network/utility.h"
 #include "common/protobuf/utility.h"
 #include "common/router/shadow_writer_impl.h"
@@ -26,6 +27,7 @@
 #include "common/upstream/load_balancer_impl.h"
 #include "common/upstream/original_dst_cluster.h"
 #include "common/upstream/ring_hash_lb.h"
+#include "common/upstream/subset_lb.h"
 
 #include "fmt/format.h"
 
@@ -196,7 +198,7 @@ ClusterManagerImpl::ClusterManagerImpl(const envoy::api::v2::Bootstrap& bootstra
   }
 
   if (bootstrap.cluster_manager().upstream_bind_config().has_source_address()) {
-    source_address_ = Network::Utility::fromProtoSocketAddress(
+    source_address_ = Network::Address::resolveProtoSocketAddress(
         bootstrap.cluster_manager().upstream_bind_config().source_address());
   }
 
@@ -237,6 +239,17 @@ ClusterManagerImpl::ClusterManagerImpl(const envoy::api::v2::Bootstrap& bootstra
 
   init_helper_.onStaticLoadComplete();
   ads_mux_->start();
+
+  if (cm_config.has_load_stats_config()) {
+    const auto& load_stats_config = cm_config.load_stats_config();
+    if (load_stats_config.cluster_name().size() != 1) {
+      // TODO(htuch): Add support for multiple clusters, #1170.
+      throw EnvoyException(
+          "envoy::api::v2::ApiConfigSource must have a singleton cluster name specified");
+    }
+    load_stats_reporter_.reset(new LoadStatsReporter(
+        bootstrap.node(), *this, stats, load_stats_config.cluster_name()[0], primary_dispatcher));
+  }
 }
 
 ClusterManagerStats ClusterManagerImpl::generateStats(Stats::Scope& scope) {
@@ -520,8 +533,8 @@ void ClusterManagerImpl::ThreadLocalClusterManagerImpl::updateClusterMembership(
 
   ASSERT(config.thread_local_clusters_.find(name) != config.thread_local_clusters_.end());
   config.thread_local_clusters_[name]->host_set_.updateHosts(
-      hosts, healthy_hosts, hosts_per_locality, healthy_hosts_per_locality, hosts_added,
-      hosts_removed);
+      std::move(hosts), std::move(healthy_hosts), std::move(hosts_per_locality),
+      std::move(healthy_hosts_per_locality), hosts_added, hosts_removed);
 }
 
 ClusterManagerImpl::ThreadLocalClusterManagerImpl::ClusterEntry::ClusterEntry(
@@ -531,33 +544,38 @@ ClusterManagerImpl::ThreadLocalClusterManagerImpl::ClusterEntry::ClusterEntry(
                          parent.parent_.local_info_, parent.parent_, parent.parent_.runtime_,
                          parent.parent_.random_,
                          Router::ShadowWriterPtr{new Router::ShadowWriterImpl(parent.parent_)}) {
-
-  switch (cluster->lbType()) {
-  case LoadBalancerType::LeastRequest: {
-    lb_.reset(new LeastRequestLoadBalancer(host_set_, parent.local_host_set_, cluster->stats(),
+  if (cluster->lbSubsetInfo().isEnabled()) {
+    lb_.reset(new SubsetLoadBalancer(cluster->lbType(), host_set_, parent.local_host_set_,
+                                     cluster->stats(), parent.parent_.runtime_,
+                                     parent.parent_.random_, cluster->lbSubsetInfo()));
+  } else {
+    switch (cluster->lbType()) {
+    case LoadBalancerType::LeastRequest: {
+      lb_.reset(new LeastRequestLoadBalancer(host_set_, parent.local_host_set_, cluster->stats(),
+                                             parent.parent_.runtime_, parent.parent_.random_));
+      break;
+    }
+    case LoadBalancerType::Random: {
+      lb_.reset(new RandomLoadBalancer(host_set_, parent.local_host_set_, cluster->stats(),
+                                       parent.parent_.runtime_, parent.parent_.random_));
+      break;
+    }
+    case LoadBalancerType::RoundRobin: {
+      lb_.reset(new RoundRobinLoadBalancer(host_set_, parent.local_host_set_, cluster->stats(),
                                            parent.parent_.runtime_, parent.parent_.random_));
-    break;
-  }
-  case LoadBalancerType::Random: {
-    lb_.reset(new RandomLoadBalancer(host_set_, parent.local_host_set_, cluster->stats(),
-                                     parent.parent_.runtime_, parent.parent_.random_));
-    break;
-  }
-  case LoadBalancerType::RoundRobin: {
-    lb_.reset(new RoundRobinLoadBalancer(host_set_, parent.local_host_set_, cluster->stats(),
-                                         parent.parent_.runtime_, parent.parent_.random_));
-    break;
-  }
-  case LoadBalancerType::RingHash: {
-    lb_.reset(new RingHashLoadBalancer(host_set_, cluster->stats(), parent.parent_.runtime_,
-                                       parent.parent_.random_));
-    break;
-  }
-  case LoadBalancerType::OriginalDst: {
-    lb_.reset(new OriginalDstCluster::LoadBalancer(
-        host_set_, parent.parent_.primary_clusters_.at(cluster->name()).cluster_));
-    break;
-  }
+      break;
+    }
+    case LoadBalancerType::RingHash: {
+      lb_.reset(new RingHashLoadBalancer(host_set_, cluster->stats(), parent.parent_.runtime_,
+                                         parent.parent_.random_));
+      break;
+    }
+    case LoadBalancerType::OriginalDst: {
+      lb_.reset(new OriginalDstCluster::LoadBalancer(
+          host_set_, parent.parent_.primary_clusters_.at(cluster->name()).cluster_));
+      break;
+    }
+    }
   }
 
   host_set_.addMemberUpdateCb([this](const std::vector<HostSharedPtr>&,

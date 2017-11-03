@@ -151,19 +151,18 @@ case_sensitive
 
 use_websocket
   *(optional, boolean)* Indicates that a HTTP/1.1 client connection to this particular route
-  should be allowed (and expected) to upgrade to a WebSocket connection. The default is false.
+  should be allowed to upgrade to a WebSocket connection. The default is false.
 
   .. attention::
 
     If set to true, Envoy will expect the first request matching this route to contain WebSocket
-    upgrade headers. If the headers are not present, the connection will be rejected. If set to
-    true, Envoy will setup plain TCP proxying between the client and the upstream server. Hence,
-    an upstream server that rejects the WebSocket upgrade request is also responsible for closing
-    the associated connection. Until then, Envoy will continue to proxy data from the client to
-    the upstream server.
+    upgrade headers. If the headers are not present, the connection will be processed as a normal
+    HTTP/1.1 connection. If the upgrade headers are present, Envoy will setup plain TCP proxying
+    between the client and the upstream server. Hence, an upstream server that rejects the WebSocket
+    upgrade request is also responsible for closing the associated connection. Until then, Envoy will
+    continue to proxy data from the client to the upstream server.
 
-    Redirects, timeouts and retries are not supported on routes where websocket upgrades are
-    allowed.
+    Redirects, timeouts and retries are not supported on requests with WebSocket upgrade headers.
 
 .. _config_http_conn_man_route_table_route_timeout:
 
@@ -451,7 +450,9 @@ Specifies the route's decorator.
 
 operation
   *(required, string)* The operation name associated with the request matched to this route. If tracing is
-  enabled, this information will be used as the span name reported for this request.
+  enabled, this information will be used as the span name reported for this request. NOTE: For ingress
+  (inbound) requests this value may be overridden by the
+  :ref:`x-envoy-decorator-operation <config_http_filters_router_x-envoy-decorator-operation>` request header.
 
 .. _config_http_conn_man_route_table_route_add_req_headers:
 

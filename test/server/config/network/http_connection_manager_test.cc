@@ -21,9 +21,9 @@ namespace Server {
 namespace Configuration {
 namespace {
 
-envoy::api::v2::filter::HttpConnectionManager
+envoy::api::v2::filter::http::HttpConnectionManager
 parseHttpConnectionManagerFromJson(const std::string& json_string) {
-  envoy::api::v2::filter::HttpConnectionManager http_connection_manager;
+  envoy::api::v2::filter::http::HttpConnectionManager http_connection_manager;
   auto json_object_ptr = Json::Factory::loadFromString(json_string);
   Config::FilterJson::translateHttpConnectionManager(*json_object_ptr, http_connection_manager);
   return http_connection_manager;
@@ -59,8 +59,7 @@ TEST_F(HttpConnectionManagerConfigTest, InvalidFilterName) {
       ]
     },
     "filters": [
-      { "type": "encoder", "name": "foo", "config": {}
-      }
+      { "name": "foo", "config": {} }
     ]
   }
   )EOF";
@@ -97,7 +96,7 @@ TEST_F(HttpConnectionManagerConfigTest, MiscConfig) {
       "request_headers_for_tags": [ "foo" ]
     },
     "filters": [
-      { "type": "both", "name": "http_dynamo_filter", "config": {} }
+      { "name": "http_dynamo_filter", "config": {} }
     ]
   }
   )EOF";
@@ -132,7 +131,7 @@ TEST_F(HttpConnectionManagerConfigTest, SingleDateProvider) {
       ]
     },
     "filters": [
-      { "type": "both", "name": "http_dynamo_filter", "config": {} }
+      { "name": "http_dynamo_filter", "config": {} }
     ]
   }
   )EOF";

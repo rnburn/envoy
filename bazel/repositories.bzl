@@ -1,5 +1,7 @@
-load(":target_recipes.bzl", "TARGET_RECIPES")
+load(":genrule_repository.bzl", "genrule_repository")
+load(":patched_http_archive.bzl", "patched_http_archive")
 load(":repository_locations.bzl", "REPO_LOCATIONS")
+load(":target_recipes.bzl", "TARGET_RECIPES")
 
 def _repository_impl(ctxt):
     # Setup the build directory with links to the relevant files.
@@ -30,15 +32,6 @@ def _repository_impl(ctxt):
               "https://github.com/envoyproxy/envoy/blob/master/bazel/README.md#quick-start-bazel-build-for-developers are met.")
         # This error message doesn't appear to the user :( https://github.com/bazelbuild/bazel/issues/3683
         fail("External dep build failed")
-
-def _protobuf_repository_impl(ctxt):
-    deps_path = ctxt.attr.envoy_deps_path
-    if not deps_path.endswith("/"):
-        deps_path += "/"
-    ctxt.symlink(Label(deps_path + "thirdparty/protobuf:protobuf.bzl"), "protobuf.bzl")
-    ctxt.symlink(Label(deps_path + "thirdparty/protobuf:BUILD"), "BUILD")
-    ctxt.symlink(ctxt.path(Label(deps_path + "thirdparty/protobuf:BUILD")).dirname.get_child("src"),
-                 "src")
 
 def py_jinja2_dep():
     BUILD = """
@@ -107,13 +100,22 @@ def cc_deps(skip_targets):
             actual = "@grpc_httpjson_transcoding//src:transcoding",
         )
 
+def go_deps(skip_targets):
+    if 'io_bazel_rules_go' not in skip_targets:
+        native.git_repository(
+            name = "io_bazel_rules_go",
+            remote = "https://github.com/bazelbuild/rules_go.git",
+            commit = "4374be38e9a75ff5957c3922adb155d32086fe14",
+        )
+
 def envoy_api_deps(skip_targets):
   if 'envoy_api' not in skip_targets:
     native.git_repository(
         name = "envoy_api",
         remote = REPO_LOCATIONS["envoy_api"],
-        commit = "9be6aff6da46e024af56cce20cb5d5d3184f19c5",
+        commit = "6e3e1a784cc583f1fe1a7fd3ed109a8f54e0b1b4",
     )
+
     api_bind_targets = [
         "address",
         "base",
@@ -126,7 +128,7 @@ def envoy_api_deps(skip_targets):
         "lds",
         "protocol",
         "rds",
-        "tls_context",
+        "sds",
     ]
     for t in api_bind_targets:
         native.bind(
@@ -134,32 +136,52 @@ def envoy_api_deps(skip_targets):
             actual = "@envoy_api//api:" + t + "_cc",
         )
     filter_bind_targets = [
-        "http_connection_manager",
+        "accesslog",
+        "fault",
     ]
     for t in filter_bind_targets:
         native.bind(
             name = "envoy_filter_" + t,
             actual = "@envoy_api//api/filter:" + t + "_cc",
         )
+    http_filter_bind_targets = [
+        "http_connection_manager",
+        "router",
+        "buffer",
+        "transcoder",
+        "rate_limit",
+        "ip_tagging",
+        "health_check",
+        "fault",
+    ]
+    for t in http_filter_bind_targets:
+        native.bind(
+            name = "envoy_filter_http_" + t,
+            actual = "@envoy_api//api/filter/http:" + t + "_cc",
+        )
+    network_filter_bind_targets = [
+        "tcp_proxy",
+        "mongo_proxy",
+        "redis_proxy",
+        "rate_limit",
+        "client_ssl_auth",
+    ]
+    for t in network_filter_bind_targets:
+        native.bind(
+            name = "envoy_filter_network_" + t,
+            actual = "@envoy_api//api/filter/network:" + t + "_cc",
+        )    
     native.bind(
         name = "http_api_protos",
         actual = "@googleapis//:http_api_protos",
     )
     native.bind(
-        name = "http_api_protos_genproto",
-        actual = "@googleapis//:http_api_protos_genproto",
+        name = "http_api_protos_lib",
+        actual = "@googleapis//:http_api_protos_lib",
     )
 
-def envoy_dependencies(path = "@envoy_deps//", skip_protobuf_bzl = False, skip_targets = []):
-    native.bind(
-        name = "cc_wkt_protos",
-        actual = "@protobuf_bzl//:cc_wkt_protos",
-    )
-    native.bind(
-        name = "cc_wkt_protos_genproto",
-        actual = "@protobuf_bzl//:cc_wkt_protos_genproto",
-    )
-
+def envoy_dependencies(path = "@envoy_deps//", skip_com_google_protobuf = False, skip_targets = [],
+                       repository = ""):
     envoy_repository = repository_rule(
         implementation = _repository_impl,
         environ = [
@@ -187,21 +209,25 @@ def envoy_dependencies(path = "@envoy_deps//", skip_protobuf_bzl = False, skip_t
         recipes = recipes.to_list(),
     )
 
-    protobuf_repository = repository_rule(
-        implementation = _protobuf_repository_impl,
-        attrs = {
-            "envoy_deps_path": attr.string(),
-        },
-    )
-
-    # If the WORKSPACE hasn't already supplied @protobuf_bzl and told us to skip it, we need to map in the
-    # full repo into @protobuf_bzl so that we can depend on this in envoy_build_system.bzl and for things
-    # like @protobuf_bzl//:cc_wkt_protos in envoy-api. We do this by some evil symlink stuff.
-    if not skip_protobuf_bzl:
-        protobuf_repository(
-            name = "protobuf_bzl",
-            envoy_deps_path = path,
-        )
+    # `existing_rule_keys` contains the names of repositories that have already
+    # been defined in the Bazel workspace. By skipping repos with existing keys,
+    # users can override dependency versions by using standard Bazel repository
+    # rules in their WORKSPACE files.
+    #
+    # The long repo names (`com_github_fmtlib_fmt` instead of `fmtlib`) are
+    # semi-standard in the Bazel community, intended to avoid both duplicate
+    # dependencies and name conflicts.
+    existing_rule_keys = native.existing_rules().keys()
+    if not ("fmtlib" in skip_targets or "com_github_fmtlib_fmt" in existing_rule_keys):
+        com_github_fmtlib_fmt(repository)
+    if not ("spdlog" in skip_targets or "com_github_gabime_spdlog" in existing_rule_keys):
+        com_github_gabime_spdlog(repository)
+    if not ("opentracing" in skip_targets or "com_github_opentracing_opentracing_cpp" in existing_rule_keys):
+        com_github_opentracing_opentracing_cpp(repository)
+    if not ("lightstep" in skip_targets or "com_github_lightstep_lightstep_tracer_cpp" in existing_rule_keys):
+        com_github_lightstep_lightstep_tracer_cpp(repository)
+    if not (skip_com_google_protobuf or "com_google_protobuf" in existing_rule_keys):
+        com_google_protobuf()
 
     for t in TARGET_RECIPES:
         if t not in skip_targets:
@@ -212,4 +238,96 @@ def envoy_dependencies(path = "@envoy_deps//", skip_protobuf_bzl = False, skip_t
 
     python_deps(skip_targets)
     cc_deps(skip_targets)
+    go_deps(skip_targets)
     envoy_api_deps(skip_targets)
+
+def com_github_fmtlib_fmt(repository = ""):
+  native.new_http_archive(
+      name = "com_github_fmtlib_fmt",
+      urls = [
+          "https://github.com/fmtlib/fmt/releases/download/4.0.0/fmt-4.0.0.zip",
+      ],
+      sha256 = "10a9f184d4d66f135093a08396d3b0a0ebe8d97b79f8b3ddb8559f75fe4fcbc3",
+      strip_prefix = "fmt-4.0.0",
+      build_file = repository + "//bazel/external:fmtlib.BUILD",
+  )
+  native.bind(
+      name="fmtlib",
+      actual="@com_github_fmtlib_fmt//:fmtlib",
+  )
+
+def com_github_gabime_spdlog(repository = ""):
+  native.new_http_archive(
+      name = "com_github_gabime_spdlog",
+      urls = [
+          "https://github.com/gabime/spdlog/archive/v0.14.0.tar.gz",
+      ],
+      sha256 = "eb5beb4e53f4bfff5b32eb4db8588484bdc15a17b90eeefef3a9fc74fec1d83d",
+      strip_prefix = "spdlog-0.14.0",
+      build_file = repository + "//bazel/external:spdlog.BUILD",
+  )
+  native.bind(
+      name="spdlog",
+      actual="@com_github_gabime_spdlog//:spdlog",
+  )
+
+def com_github_opentracing_opentracing_cpp(repository = ""):
+  genrule_repository(
+      name = "com_github_opentracing_opentracing_cpp",
+      urls = [
+          "https://github.com/opentracing/opentracing-cpp/archive/v1.0.0.tar.gz",
+      ],
+      sha256 = "9543f66790ba65810869a29b3aaef5286f1c446cb498a304d0d8b153c289cae8",
+      strip_prefix = "opentracing-cpp-1.0.0",
+      genrule_cmd_file = repository + "//bazel/external:opentracing.genrule_cmd",
+      build_file = repository + "//bazel/external:opentracing.BUILD",
+  )
+  native.bind(
+      name="opentracing",
+      actual="@com_github_opentracing_opentracing_cpp//:opentracing",
+  )
+  
+
+def com_github_lightstep_lightstep_tracer_cpp(repository = ""):
+  genrule_repository(
+      name = "com_github_lightstep_lightstep_tracer_cpp",
+      urls = [
+          "https://github.com/rnburn/lightstep-tracer-cpp/archive/v0.5.3.tar.gz",
+      ],
+      sha256 = "260b506bd4ecce319ad0e58a870818b51f534d94f3898c89b0869676c9faecd0",
+      strip_prefix = "lightstep-tracer-cpp-0.5.3",
+      genrule_cmd_file = repository + "//bazel/external:lightstep.genrule_cmd",
+      build_file = repository + "//bazel/external:lightstep.BUILD",
+  )
+  native.bind(
+      name="lightstep",
+      actual="@com_github_lightstep_lightstep_tracer_cpp//:lightstep",
+  )
+
+def com_google_protobuf():
+  # TODO(htuch): This can switch back to a point release http_archive at the next
+  # release (> 3.4.1), we need HEAD proto_library support and
+  # https://github.com/google/protobuf/pull/3761.
+  native.http_archive(
+      name = "com_google_protobuf",
+      strip_prefix = "protobuf-c4f59dcc5c13debc572154c8f636b8a9361aacde",
+      sha256 = "5d4551193416861cb81c3bc0a428f22a6878148c57c31fb6f8f2aa4cf27ff635",
+      url = "https://github.com/google/protobuf/archive/c4f59dcc5c13debc572154c8f636b8a9361aacde.tar.gz",
+  )
+  # Needed for cc_proto_library, Bazel doesn't support aliases today for repos,
+  # see https://groups.google.com/forum/#!topic/bazel-discuss/859ybHQZnuI and
+  # https://github.com/bazelbuild/bazel/issues/3219.
+  native.http_archive(
+      name = "com_google_protobuf_cc",
+      strip_prefix = "protobuf-c4f59dcc5c13debc572154c8f636b8a9361aacde",
+      sha256 = "5d4551193416861cb81c3bc0a428f22a6878148c57c31fb6f8f2aa4cf27ff635",
+      url = "https://github.com/google/protobuf/archive/c4f59dcc5c13debc572154c8f636b8a9361aacde.tar.gz",
+  )
+  native.bind(
+      name = "protobuf",
+      actual = "@com_google_protobuf//:protobuf",
+  )
+  native.bind(
+      name = "protoc",
+      actual = "@com_google_protobuf_cc//:protoc",
+  )

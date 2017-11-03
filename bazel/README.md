@@ -243,6 +243,18 @@ bazel build --copt=-DNVLOG //source/exe:envoy-static
 Hot restart can be disabled in any build by specifying `--define=hot_restart=disabled`
 on the Bazel command line.
 
+## Stats Tunables
+
+The default maximum number of stats in shared memory, and the default
+maximum length of a cluster/route config/listener name, can be
+overriden at compile-time by defining `ENVOY_DEFAULT_MAX_STATS` and
+`ENVOY_DEFAULT_MAX_OBJ_NAME_LENGTH`, respectively, to the desired
+value.  For example:
+
+```
+bazel build --copts=-DENVOY_DEFAULT_MAX_STATS=32768 --copts=-DENVOY_DEFAULT_MAX_OBJ_NAME_LENGTH=150 //source/exe:envoy-static
+```
+
 
 # Release builds
 

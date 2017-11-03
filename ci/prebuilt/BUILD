@@ -36,16 +36,6 @@ cc_library(
 )
 
 cc_library(
-    name = "fmtlib",
-    hdrs = glob([
-        "thirdparty/fmtlib/fmt/*.cc",
-        "thirdparty/fmtlib/fmt/*.h",
-    ]),
-    defines = ["FMT_HEADER_ONLY"],
-    includes = ["thirdparty/fmtlib"],
-)
-
-cc_library(
     name = "googletest",
     srcs = [
         "thirdparty_build/lib/libgmock.a",
@@ -66,26 +56,12 @@ cc_library(
 )
 
 cc_library(
-    name = "lightstep",
-    srcs = ["thirdparty_build/lib/liblightstep_tracer.a"],
-    hdrs = glob([
-        "thirdparty_build/include/lightstep/**/*.h",
-    ]),
+    name = "luajit",
+    srcs = ["thirdparty_build/lib/libluajit-5.1.a"],
+    hdrs = glob(["thirdparty_build/include/luajit-2.0/*"]),
     includes = ["thirdparty_build/include"],
-    deps = [
-        ":opentracing",
-        ":protobuf",
-    ],
-)
-
-cc_library(
-    name = "opentracing",
-    srcs = ["thirdparty_build/lib/libopentracing.a"],
-    hdrs = glob([
-        "thirdparty_build/include/opentracing/**/*.h",
-        "thirdparty_build/include/opentracing/**/*.hpp",
-    ]),
-    includes = ["thirdparty_build/include"],
+    # TODO(mattklein123): We should strip luajit-2.0 here for consumers. However, if we do that
+    # the headers get included using -I vs. -isystem which then causes old-style-cast warnings.
 )
 
 cc_library(
@@ -96,32 +72,9 @@ cc_library(
 )
 
 cc_library(
-    name = "protobuf",
-    srcs = glob(["thirdparty_build/lib/libproto*.a"]),
-    hdrs = glob(["thirdparty_build/include/google/protobuf/**/*.h"]),
-    includes = ["thirdparty_build/include"],
-)
-
-filegroup(
-    name = "protoc",
-    srcs = ["thirdparty_build/bin/protoc"],
-)
-
-cc_library(
     name = "rapidjson",
     hdrs = glob(["thirdparty/rapidjson/include/**/*.h"]),
     includes = ["thirdparty/rapidjson/include"],
-)
-
-cc_library(
-    name = "spdlog",
-    hdrs = glob([
-        "thirdparty/spdlog/include/**/*.cc",
-        "thirdparty/spdlog/include/**/*.h",
-    ]),
-    defines = ["SPDLOG_FMT_EXTERNAL"],
-    includes = ["thirdparty/spdlog/include"],
-    deps = ["fmtlib"],
 )
 
 cc_library(

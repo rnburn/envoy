@@ -1,13 +1,17 @@
 #include "common/config/utility.h"
 
+#include <unordered_set>
+
 #include "common/common/assert.h"
 #include "common/common/hex.h"
 #include "common/common/utility.h"
 #include "common/config/json_utility.h"
 #include "common/config/resources.h"
+#include "common/config/well_known_names.h"
 #include "common/json/config_schemas.h"
 #include "common/protobuf/protobuf.h"
 #include "common/protobuf/utility.h"
+#include "common/stats/stats_impl.h"
 
 #include "fmt/format.h"
 
@@ -84,13 +88,18 @@ void Utility::translateCdsConfig(const Json::Object& json_config,
                            *cds_config.mutable_api_config_source());
 }
 
-void Utility::translateRdsConfig(const Json::Object& json_rds, envoy::api::v2::filter::Rds& rds) {
+void Utility::translateRdsConfig(const Json::Object& json_rds,
+                                 envoy::api::v2::filter::http::Rds& rds) {
   json_rds.validateSchema(Json::Schema::RDS_CONFIGURATION_SCHEMA);
+
+  const std::string name = json_rds.getString("route_config_name", "");
+  checkObjNameLength("Invalid route_config name", name);
+  rds.set_route_config_name(name);
+
   translateApiConfigSource(json_rds.getString("cluster"),
                            json_rds.getInteger("refresh_delay_ms", 30000),
                            json_rds.getString("api_type", ApiType::get().RestLegacy),
                            *rds.mutable_config_source()->mutable_api_config_source());
-  JSON_UTIL_SET_STRING(json_rds, rds, route_config_name);
 }
 
 void Utility::translateLdsConfig(const Json::Object& json_lds,
@@ -117,6 +126,45 @@ std::string Utility::resourceName(const ProtobufWkt::Any& resource) {
   }
   throw EnvoyException(
       fmt::format("Unknown type URL {} in DiscoveryResponse", resource.type_url()));
+}
+
+std::vector<Stats::TagExtractorPtr>
+Utility::createTagExtractors(const envoy::api::v2::Bootstrap& bootstrap) {
+  std::vector<Stats::TagExtractorPtr> tag_extractors;
+
+  // Ensure no tag names are repeated.
+  std::unordered_set<std::string> names;
+  auto add_tag = [&names, &tag_extractors](const std::string& name, const std::string& regex) {
+    if (!names.emplace(name).second) {
+      throw EnvoyException(fmt::format("Tag name '{}' specified twice.", name));
+    }
+
+    tag_extractors.emplace_back(Stats::TagExtractorImpl::createTagExtractor(name, regex));
+  };
+
+  // Add defaults.
+  if (!bootstrap.stats_config().has_use_all_default_tags() ||
+      bootstrap.stats_config().use_all_default_tags().value()) {
+    for (const std::pair<std::string, std::string>& default_tag :
+         TagNames::get().name_regex_pairs_) {
+      add_tag(default_tag.first, default_tag.second);
+    }
+  }
+
+  // Add custom tags.
+  for (const envoy::api::v2::TagSpecifier& tag_specifier : bootstrap.stats_config().stats_tags()) {
+    add_tag(tag_specifier.tag_name(), tag_specifier.regex());
+  }
+
+  return tag_extractors;
+}
+
+void Utility::checkObjNameLength(const std::string& error_prefix, const std::string& name) {
+  if (name.length() > Stats::RawStatData::maxObjNameLength()) {
+    throw EnvoyException(fmt::format("{}: Length of {} ({}) exceeds allowed maximum length ({})",
+                                     error_prefix, name, name.length(),
+                                     Stats::RawStatData::maxObjNameLength()));
+  }
 }
 
 } // namespace Config

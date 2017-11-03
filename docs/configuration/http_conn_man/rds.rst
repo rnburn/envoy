@@ -28,7 +28,9 @@ route_config_name
   *(required, string)* The name of the route configuration. This name will be passed to the
   :ref:`RDS HTTP API <config_http_conn_man_rds_api>`. This allows an Envoy configuration with
   multiple HTTP listeners (and associated HTTP connection manager filters) to use different route
-  configurations.
+  configurations. By default, the maximum length of the name is limited to 60 characters. This
+  limit can be increased by setting the :option:`--max-obj-name-len` command line argument to the
+  desired value.
 
 refresh_delay_ms
   *(optional, integer)* The delay, in milliseconds, between fetches to the RDS API. Envoy will add
@@ -69,7 +71,9 @@ will only perform a full reload if the hash value changes.
 Statistics
 ----------
 
-RDS has a statistics tree rooted at *http.<stat_prefix>.rds.* with the following statistics:
+RDS has a statistics tree rooted at *http.<stat_prefix>.rds.<route_config_name>.*.
+Any ``:`` character in the ``route_config_name`` name gets replaced with ``_`` in the
+stats tree. The stats tree contains the following statistics:
 
 .. csv-table::
   :header: Name, Type, Description
@@ -79,3 +83,4 @@ RDS has a statistics tree rooted at *http.<stat_prefix>.rds.* with the following
   update_attempt, Counter, Total API fetches attempted
   update_success, Counter, Total API fetches completed successfully
   update_failure, Counter, Total API fetches that failed (either network or schema errors)
+  version, Gauge, Hash of the contents from the last successful API fetch

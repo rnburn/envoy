@@ -56,7 +56,7 @@ envoy_cc_library(
     srcs = ["rds_impl.cc"],
     hdrs = ["rds_impl.h"],
     external_deps = [
-        "envoy_filter_http_connection_manager",
+        "envoy_filter_http_http_connection_manager",
         "envoy_rds",
     ],
     deps = [
@@ -85,7 +85,7 @@ envoy_cc_library(
     srcs = ["rds_subscription.cc"],
     hdrs = ["rds_subscription.h"],
     external_deps = [
-        "envoy_filter_http_connection_manager",
+        "envoy_filter_http_http_connection_manager",
     ],
     deps = [
         "//include/envoy/config:subscription_interface",
@@ -144,6 +144,8 @@ envoy_cc_library(
         "//source/common/common:assert_lib",
         "//source/common/common:empty_string",
         "//source/common/common:enum_to_int",
+        "//source/common/common:hash_lib",
+        "//source/common/common:hex_lib",
         "//source/common/common:logger_lib",
         "//source/common/common:utility_lib",
         "//source/common/grpc:common_lib",

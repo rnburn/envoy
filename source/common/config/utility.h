@@ -5,6 +5,7 @@
 #include "envoy/json/json_object.h"
 #include "envoy/local_info/local_info.h"
 #include "envoy/registry/registry.h"
+#include "envoy/stats/stats.h"
 #include "envoy/upstream/cluster_manager.h"
 
 #include "common/common/assert.h"
@@ -18,7 +19,7 @@
 #include "api/base.pb.h"
 #include "api/cds.pb.h"
 #include "api/eds.pb.h"
-#include "api/filter/http_connection_manager.pb.h"
+#include "api/filter/http/http_connection_manager.pb.h"
 #include "api/lds.pb.h"
 #include "api/rds.pb.h"
 
@@ -59,11 +60,15 @@ public:
   }
 
   /**
-   * Legacy APIs uses JSON and do not have an explicit version. Hash the body and append
-   * a user-friendly prefix.
+   * Legacy APIs uses JSON and do not have an explicit version.
+   * @param input the input to hash.
+   * @return std::pair<std::string, uint64_t> the string is the hash converted into
+   *         a hex string, pre-pended by a user friendly prefix. The uint64_t is the
+   *         raw hash.
    */
-  static std::string computeHashedVersion(const std::string& input) {
-    return "hash_" + Hex::uint64ToHex(HashUtil::xxHash64(input));
+  static std::pair<std::string, uint64_t> computeHashedVersion(const std::string& input) {
+    uint64_t hash = HashUtil::xxHash64(input);
+    return std::make_pair("hash_" + Hex::uint64ToHex(hash), hash);
   }
 
   /**
@@ -129,11 +134,12 @@ public:
                                  envoy::api::v2::ConfigSource& cds_config);
 
   /**
-   * Convert a v1 RDS JSON config to v2 RDS envoy::api::v2::filter::Rds.
+   * Convert a v1 RDS JSON config to v2 RDS envoy::api::v2::filter::http::Rds.
    * @param json_rds source v1 RDS JSON config.
-   * @param rds destination v2 RDS envoy::api::v2::filter::Rds.
+   * @param rds destination v2 RDS envoy::api::v2::filter::http::Rds.
    */
-  static void translateRdsConfig(const Json::Object& json_rds, envoy::api::v2::filter::Rds& rds);
+  static void translateRdsConfig(const Json::Object& json_rds,
+                                 envoy::api::v2::filter::http::Rds& rds);
 
   /**
    * Convert a v1 LDS JSON config to v2 LDS envoy::api::v2::ConfigSource.
@@ -149,7 +155,7 @@ public:
    * @return SubscriptionStats for scope.
    */
   static SubscriptionStats generateStats(Stats::Scope& scope) {
-    return {ALL_SUBSCRIPTION_STATS(POOL_COUNTER(scope))};
+    return {ALL_SUBSCRIPTION_STATS(POOL_COUNTER(scope), POOL_GAUGE(scope))};
   }
 
   /**
@@ -207,6 +213,23 @@ public:
    * @return std::string resource name.
    */
   static std::string resourceName(const ProtobufWkt::Any& resource);
+
+  /**
+   * Creates the set of stats tag extractors requested by the config and transfers ownership to the
+   * caller.
+   * @param bootstrap bootstrap proto.
+   * @return std::vector<Stats::TagExtractorPtr> tag extractor vector.
+   */
+  static std::vector<Stats::TagExtractorPtr>
+  createTagExtractors(const envoy::api::v2::Bootstrap& bootstrap);
+
+  /**
+   * Check user supplied name in RDS/CDS/LDS for sanity.
+   * It should be within the configured length limit. Throws on error.
+   * @param error_prefix supplies the prefix to use in error messages.
+   * @param name supplies the name to check for length limits.
+   */
+  static void checkObjNameLength(const std::string& error_prefix, const std::string& name);
 };
 
 } // namespace Config

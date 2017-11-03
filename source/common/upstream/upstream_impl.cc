@@ -20,6 +20,7 @@
 #include "common/config/tls_context_json.h"
 #include "common/http/utility.h"
 #include "common/network/address_impl.h"
+#include "common/network/resolver_impl.h"
 #include "common/network/utility.h"
 #include "common/protobuf/protobuf.h"
 #include "common/protobuf/utility.h"
@@ -41,7 +42,7 @@ getSourceAddress(const envoy::api::v2::Cluster& cluster,
                  const Network::Address::InstanceConstSharedPtr source_address) {
   // The source address from cluster config takes precedence.
   if (cluster.upstream_bind_config().has_source_address()) {
-    return Network::Utility::fromProtoSocketAddress(
+    return Network::Address::resolveProtoSocketAddress(
         cluster.upstream_bind_config().source_address());
   }
   // If there's no source address in the cluster config, use any default from the bootstrap proto.
@@ -67,7 +68,11 @@ HostImpl::createConnection(Event::Dispatcher& dispatcher, const ClusterInfo& clu
 void HostImpl::weight(uint32_t new_weight) { weight_ = std::max(1U, std::min(100U, new_weight)); }
 
 ClusterStats ClusterInfoImpl::generateStats(Stats::Scope& scope) {
-  return {ALL_CLUSTER_STATS(POOL_COUNTER(scope), POOL_GAUGE(scope), POOL_TIMER(scope))};
+  return {ALL_CLUSTER_STATS(POOL_COUNTER(scope), POOL_GAUGE(scope), POOL_HISTOGRAM(scope))};
+}
+
+ClusterLoadReportStats ClusterInfoImpl::generateLoadReportStats(Stats::Scope& scope) {
+  return {ALL_CLUSTER_LOAD_REPORT_STATS(POOL_COUNTER(scope))};
 }
 
 ClusterInfoImpl::ClusterInfoImpl(const envoy::api::v2::Cluster& config,
@@ -82,11 +87,14 @@ ClusterInfoImpl::ClusterInfoImpl(const envoy::api::v2::Cluster& config,
       per_connection_buffer_limit_bytes_(
           PROTOBUF_GET_WRAPPED_OR_DEFAULT(config, per_connection_buffer_limit_bytes, 1024 * 1024)),
       stats_scope_(stats.createScope(fmt::format("cluster.{}.", name_))),
-      stats_(generateStats(*stats_scope_)), features_(parseFeatures(config)),
+      stats_(generateStats(*stats_scope_)),
+      load_report_stats_(generateLoadReportStats(load_report_stats_store_)),
+      features_(parseFeatures(config)),
       http2_settings_(Http::Utility::parseHttp2Settings(config.http2_protocol_options())),
       resource_managers_(config, runtime, name_),
       maintenance_mode_runtime_key_(fmt::format("upstream.maintenance_mode.{}", name_)),
-      source_address_(getSourceAddress(config, source_address)), added_via_api_(added_via_api) {
+      source_address_(getSourceAddress(config, source_address)), added_via_api_(added_via_api),
+      lb_subset_(LoadBalancerSubsetInfoImpl(config.lb_subset_config())) {
   ssl_ctx_ = nullptr;
   if (config.has_tls_context()) {
     Ssl::ClientContextConfigImpl context_config(config.tls_context());
@@ -144,7 +152,7 @@ ClusterSharedPtr ClusterImplBase::create(const envoy::api::v2::Cluster& cluster,
     std::vector<Network::Address::InstanceConstSharedPtr> resolvers;
     resolvers.reserve(resolver_addrs.size());
     for (const auto& resolver_addr : resolver_addrs) {
-      resolvers.push_back(Network::Utility::fromProtoAddress(resolver_addr));
+      resolvers.push_back(Network::Address::resolveProtoAddress(resolver_addr));
     }
     selected_dns_resolver = dispatcher.createDnsResolver(resolvers);
   }
@@ -168,6 +176,10 @@ ClusterSharedPtr ClusterImplBase::create(const envoy::api::v2::Cluster& cluster,
     if (cluster.lb_policy() != envoy::api::v2::Cluster::ORIGINAL_DST_LB) {
       throw EnvoyException(fmt::format(
           "cluster: cluster type 'original_dst' may only be used with LB type 'original_dst_lb'"));
+    }
+    if (cluster.has_lb_subset_config() && cluster.lb_subset_config().subset_selectors_size() != 0) {
+      throw EnvoyException(fmt::format(
+          "cluster: cluster type 'original_dst' may not be used with lb_subset_config"));
     }
     new_cluster.reset(new OriginalDstCluster(cluster, runtime, stats, ssl_context_manager, cm,
                                              dispatcher, added_via_api));
@@ -250,6 +262,15 @@ ResourceManager& ClusterInfoImpl::resourceManager(ResourcePriority priority) con
   return *resource_managers_.managers_[enumToInt(priority)];
 }
 
+void ClusterImplBase::blockHcUpdates(bool block) {
+  ASSERT(block_hc_updates_ == !block);
+  block_hc_updates_ = block;
+
+  if (!block_hc_updates_) {
+    reloadHealthyHosts();
+  }
+}
+
 void ClusterImplBase::runUpdateCallbacks(const std::vector<HostSharedPtr>& hosts_added,
                                          const std::vector<HostSharedPtr>& hosts_removed) {
   if (!hosts_added.empty() || !hosts_removed.empty()) {
@@ -268,7 +289,7 @@ void ClusterImplBase::setHealthChecker(const HealthCheckerSharedPtr& health_chec
   health_checker_->addHostCheckCompleteCb([this](HostSharedPtr, bool changed_state) -> void {
     // If we get a health check completion that resulted in a state change, signal to
     // update the host sets on all threads.
-    if (changed_state) {
+    if (!block_hc_updates_ && changed_state) {
       reloadHealthyHosts();
     }
   });
@@ -336,7 +357,7 @@ StaticClusterImpl::StaticClusterImpl(const envoy::api::v2::Cluster& cluster,
   HostVectorSharedPtr new_hosts(new std::vector<HostSharedPtr>());
   for (const auto& host : cluster.hosts()) {
     new_hosts->emplace_back(
-        HostSharedPtr{new HostImpl(info_, "", Network::Utility::fromProtoAddress(host),
+        HostSharedPtr{new HostImpl(info_, "", Network::Address::resolveProtoAddress(host),
                                    envoy::api::v2::Metadata::default_instance(), 1,
                                    envoy::api::v2::Locality().default_instance())});
   }

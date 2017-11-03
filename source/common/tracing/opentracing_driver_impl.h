@@ -17,7 +17,7 @@ public:
                   std::unique_ptr<opentracing::Span>&& span);
 
   // Tracing::Span
-  void finishSpan(SpanFinalizer& finalizer) override;
+  void finishSpan() override;
   void setOperation(const std::string& operation) override;
   void setTag(const std::string& name, const std::string& value) override;
   void injectContext(Http::HeaderMap& request_headers) override;

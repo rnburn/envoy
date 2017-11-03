@@ -120,6 +120,17 @@ public:
    * @return const std::string& the server's zone.
    */
   virtual const std::string& serviceZone() PURE;
+
+  /**
+   * @return uint64_t the maximum number of stats gauges and counters.
+   */
+  virtual uint64_t maxStats() PURE;
+
+  /**
+   * @return uint64_t the maximum name length of the name field in
+   * router/cluster/listener.
+   */
+  virtual uint64_t maxObjNameLength() PURE;
 };
 
 } // namespace Server

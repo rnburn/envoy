@@ -38,7 +38,7 @@ ConnectionManagerStats ConnectionManagerImpl::generateStats(const std::string& p
                                                             Stats::Scope& scope) {
   return {
       {ALL_HTTP_CONN_MAN_STATS(POOL_COUNTER_PREFIX(scope, prefix), POOL_GAUGE_PREFIX(scope, prefix),
-                               POOL_TIMER_PREFIX(scope, prefix))},
+                               POOL_HISTOGRAM_PREFIX(scope, prefix))},
       prefix,
       scope};
 }
@@ -60,7 +60,7 @@ ConnectionManagerImpl::ConnectionManagerImpl(ConnectionManagerConfig& config,
                                              const LocalInfo::LocalInfo& local_info,
                                              Upstream::ClusterManager& cluster_manager)
     : config_(config), stats_(config_.stats()),
-      conn_length_(stats_.named_.downstream_cx_length_ms_.allocateSpan()),
+      conn_length_(new Stats::Timespan(stats_.named_.downstream_cx_length_ms_)),
       drain_close_(drain_close), random_generator_(random_generator), tracer_(tracer),
       runtime_(runtime), local_info_(local_info), cluster_manager_(cluster_manager),
       listener_stats_(config_.listenerStats()) {}
@@ -346,9 +346,8 @@ void ConnectionManagerImpl::chargeTracingStats(const Tracing::Reason& tracing_re
 ConnectionManagerImpl::ActiveStream::ActiveStream(ConnectionManagerImpl& connection_manager)
     : connection_manager_(connection_manager),
       snapped_route_config_(connection_manager.config_.routeConfigProvider().config()),
-      stream_id_(ConnectionManagerUtility::generateStreamId(*snapped_route_config_,
-                                                            connection_manager.random_generator_)),
-      request_timer_(connection_manager_.stats_.named_.downstream_rq_time_.allocateSpan()),
+      stream_id_(connection_manager.random_generator_.random()),
+      request_timer_(new Stats::Timespan(connection_manager_.stats_.named_.downstream_rq_time_)),
       request_info_(connection_manager_.codec_->protocol()) {
   connection_manager_.stats_.named_.downstream_rq_total_.inc();
   connection_manager_.stats_.named_.downstream_rq_active_.inc();
@@ -370,9 +369,9 @@ ConnectionManagerImpl::ActiveStream::~ActiveStream() {
 
   if (request_info_.healthCheck()) {
     connection_manager_.config_.tracingStats().health_check_.inc();
-  } else {
-    Tracing::HttpConnManFinalizerImpl finalizer(request_headers_.get(), request_info_, *this);
-    active_span_->finishSpan(finalizer);
+  } else if (active_span_) {
+    Tracing::HttpTracerUtility::finalizeSpan(*active_span_, request_headers_.get(), request_info_,
+                                             *this);
   }
 
   ASSERT(state_.filter_call_state_ == 0);
@@ -440,9 +439,10 @@ void ConnectionManagerImpl::ActiveStream::decodeHeaders(HeaderMapPtr&& headers, 
   ENVOY_STREAM_LOG(debug, "request headers complete (end_stream={}):", *this, end_stream);
 #ifndef NVLOG
   request_headers_->iterate(
-      [](const HeaderEntry& header, void* context) -> void {
+      [](const HeaderEntry& header, void* context) -> HeaderMap::Iterate {
         ENVOY_STREAM_LOG(debug, "  '{}':'{}'", *static_cast<ActiveStream*>(context),
                          header.key().c_str(), header.value().c_str());
+        return HeaderMap::Iterate::Continue;
       },
       this);
 #endif
@@ -514,55 +514,82 @@ void ConnectionManagerImpl::ActiveStream::decodeHeaders(HeaderMapPtr&& headers, 
   // should return 404. The current returns no response if there is no router filter.
   if ((protocol == Protocol::Http11) && cached_route_.value()) {
     const Router::RouteEntry* route_entry = cached_route_.value()->routeEntry();
-    const bool websocket_required = (route_entry != nullptr) && route_entry->useWebSocket();
+    const bool websocket_allowed = (route_entry != nullptr) && route_entry->useWebSocket();
     const bool websocket_requested = Utility::isWebSocketUpgradeRequest(*request_headers_);
 
-    if (websocket_requested || websocket_required) {
-      if (websocket_requested && websocket_required) {
-        ENVOY_STREAM_LOG(debug, "found websocket connection. (end_stream={}):", *this, end_stream);
+    if (websocket_requested && websocket_allowed) {
+      ENVOY_STREAM_LOG(debug, "found websocket connection. (end_stream={}):", *this, end_stream);
 
-        connection_manager_.ws_connection_.reset(new WebSocket::WsHandlerImpl(
-            *request_headers_, request_info_, *route_entry, *this,
-            connection_manager_.cluster_manager_, connection_manager_.read_callbacks_));
-        connection_manager_.ws_connection_->onNewConnection();
-        connection_manager_.stats_.named_.downstream_cx_websocket_active_.inc();
-        connection_manager_.stats_.named_.downstream_cx_http1_active_.dec();
-        connection_manager_.stats_.named_.downstream_cx_websocket_total_.inc();
-      } else if (websocket_requested) {
-        // Do not allow WebSocket upgrades if the route does not support it.
-        connection_manager_.stats_.named_.downstream_rq_ws_on_non_ws_route_.inc();
-        HeaderMapImpl headers{{Headers::get().Status, std::to_string(enumToInt(Code::Forbidden))}};
-        encodeHeaders(nullptr, headers, true);
-      } else {
-        // Do not allow normal connections on WebSocket routes.
-        connection_manager_.stats_.named_.downstream_rq_non_ws_on_ws_route_.inc();
-        HeaderMapImpl headers{
-            {Headers::get().Status, std::to_string(enumToInt(Code::UpgradeRequired))}};
-        encodeHeaders(nullptr, headers, true);
-      }
+      connection_manager_.ws_connection_.reset(new WebSocket::WsHandlerImpl(
+          *request_headers_, request_info_, *route_entry, *this,
+          connection_manager_.cluster_manager_, connection_manager_.read_callbacks_));
+      connection_manager_.ws_connection_->onNewConnection();
+      connection_manager_.stats_.named_.downstream_cx_websocket_active_.inc();
+      connection_manager_.stats_.named_.downstream_cx_http1_active_.dec();
+      connection_manager_.stats_.named_.downstream_cx_websocket_total_.inc();
+      return;
+    } else if (websocket_requested) {
+      // Do not allow WebSocket upgrades if the route does not support it.
+      connection_manager_.stats_.named_.downstream_rq_ws_on_non_ws_route_.inc();
+      HeaderMapImpl headers{{Headers::get().Status, std::to_string(enumToInt(Code::Forbidden))}};
+      encodeHeaders(nullptr, headers, true);
       return;
     }
+    // Allow non websocket requests to go through websocket enabled routes.
   }
 
   // Check if tracing is enabled at all.
   if (connection_manager_.config_.tracingConfig()) {
-    Tracing::Decision tracing_decision =
-        Tracing::HttpTracerUtility::isTracing(request_info_, *request_headers_);
-    ConnectionManagerImpl::chargeTracingStats(tracing_decision.reason,
-                                              connection_manager_.config_.tracingStats());
-
-    if (tracing_decision.is_tracing) {
-      active_span_ = connection_manager_.tracer_.startSpan(*this, *request_headers_, request_info_);
-      if (cached_route_.value() && cached_route_.value()->decorator()) {
-        cached_route_.value()->decorator()->apply(*active_span_);
-      }
-      active_span_->injectContext(*request_headers_);
-    }
+    traceRequest();
   }
 
   // Set the trusted address for the connection by taking the last address in XFF.
   request_info_.downstream_address_ = Utility::getLastAddressFromXFF(*request_headers_);
   decodeHeaders(nullptr, *request_headers_, end_stream);
+}
+
+void ConnectionManagerImpl::ActiveStream::traceRequest() {
+  Tracing::Decision tracing_decision =
+      Tracing::HttpTracerUtility::isTracing(request_info_, *request_headers_);
+  ConnectionManagerImpl::chargeTracingStats(tracing_decision.reason,
+                                            connection_manager_.config_.tracingStats());
+
+  if (!tracing_decision.is_tracing) {
+    return;
+  }
+
+  active_span_ = connection_manager_.tracer_.startSpan(*this, *request_headers_, request_info_);
+
+  // If a decorator has been defined, apply it to the active span.
+  if (cached_route_.value() && cached_route_.value()->decorator()) {
+    cached_route_.value()->decorator()->apply(*active_span_);
+
+    // For egress (outbound) requests, pass the decorator's operation name (if defined)
+    // as a request header to enable the receiving service to use it in its server span.
+    if (connection_manager_.config_.tracingConfig()->operation_name_ ==
+            Tracing::OperationName::Egress &&
+        !cached_route_.value()->decorator()->getOperation().empty()) {
+      request_headers_->insertEnvoyDecoratorOperation().value(
+          cached_route_.value()->decorator()->getOperation());
+    }
+  }
+
+  const HeaderEntry* decorator_operation = request_headers_->EnvoyDecoratorOperation();
+
+  // For ingress (inbound) requests, if a decorator operation name has been provided, it
+  // should be used to override the active span's operation.
+  if (connection_manager_.config_.tracingConfig()->operation_name_ ==
+          Tracing::OperationName::Ingress &&
+      decorator_operation) {
+    if (!decorator_operation->value().empty()) {
+      active_span_->setOperation(decorator_operation->value().c_str());
+    }
+    // Remove header so not propagated to service
+    request_headers_->removeEnvoyDecoratorOperation();
+  }
+
+  // Inject the active span's tracing context into the request headers.
+  active_span_->injectContext(*request_headers_);
 }
 
 void ConnectionManagerImpl::ActiveStream::decodeHeaders(ActiveStreamDecoderFilter* filter,
@@ -649,11 +676,12 @@ void ConnectionManagerImpl::ActiveStream::decodeData(ActiveStreamDecoderFilter* 
 void ConnectionManagerImpl::ActiveStream::addDecodedData(ActiveStreamDecoderFilter& filter,
                                                          Buffer::Instance& data, bool streaming) {
   if (state_.filter_call_state_ == 0 ||
-      (state_.filter_call_state_ & FilterCallState::DecodeHeaders)) {
+      (state_.filter_call_state_ & FilterCallState::DecodeHeaders) ||
+      (state_.filter_call_state_ & FilterCallState::DecodeData)) {
     // Make sure if this triggers watermarks, the correct action is taken.
     state_.decoder_filters_streaming_ = streaming;
-    // If no call is happening or we are in the decode headers callback, buffer the data. Inline
-    // processing happens in the decodeHeaders() callback if necessary.
+    // If no call is happening or we are in the decode headers/data callback, buffer the data.
+    // Inline processing happens in the decodeHeaders() callback if necessary.
     filter.commonHandleBufferData(data);
   } else if (state_.filter_call_state_ & FilterCallState::DecodeTrailers) {
     // In this case we need to inline dispatch the data to further filters. If those filters
@@ -797,9 +825,10 @@ void ConnectionManagerImpl::ActiveStream::encodeHeaders(ActiveStreamEncoderFilte
                    end_stream && continue_data_entry == encoder_filters_.end());
 #ifndef NVLOG
   headers.iterate(
-      [](const HeaderEntry& header, void* context) -> void {
+      [](const HeaderEntry& header, void* context) -> HeaderMap::Iterate {
         ENVOY_STREAM_LOG(debug, "  '{}':'{}'", *static_cast<ActiveStream*>(context),
                          header.key().c_str(), header.value().c_str());
+        return HeaderMap::Iterate::Continue;
       },
       this);
 #endif
@@ -822,11 +851,12 @@ void ConnectionManagerImpl::ActiveStream::encodeHeaders(ActiveStreamEncoderFilte
 void ConnectionManagerImpl::ActiveStream::addEncodedData(ActiveStreamEncoderFilter& filter,
                                                          Buffer::Instance& data, bool streaming) {
   if (state_.filter_call_state_ == 0 ||
-      (state_.filter_call_state_ & FilterCallState::EncodeHeaders)) {
+      (state_.filter_call_state_ & FilterCallState::EncodeHeaders) ||
+      (state_.filter_call_state_ & FilterCallState::EncodeData)) {
     // Make sure if this triggers watermarks, the correct action is taken.
     state_.encoder_filters_streaming_ = streaming;
-    // If no call is happening or we are in the decode headers callback, buffer the data. Inline
-    // processing happens in the decodeHeaders() callback if necessary.
+    // If no call is happening or we are in the decode headers/data callback, buffer the data.
+    // Inline processing happens in the decodeHeaders() callback if necessary.
     filter.commonHandleBufferData(data);
   } else if (state_.filter_call_state_ & FilterCallState::EncodeTrailers) {
     // In this case we need to inline dispatch the data to further filters. If those filters
@@ -880,9 +910,10 @@ void ConnectionManagerImpl::ActiveStream::encodeTrailers(ActiveStreamEncoderFilt
   ENVOY_STREAM_LOG(debug, "encoding trailers via codec", *this);
 #ifndef NVLOG
   trailers.iterate(
-      [](const HeaderEntry& header, void* context) -> void {
+      [](const HeaderEntry& header, void* context) -> HeaderMap::Iterate {
         ENVOY_STREAM_LOG(debug, "  '{}':'{}'", *static_cast<ActiveStream*>(context),
                          header.key().c_str(), header.value().c_str());
+        return HeaderMap::Iterate::Continue;
       },
       this);
 #endif
@@ -1066,7 +1097,11 @@ AccessLog::RequestInfo& ConnectionManagerImpl::ActiveStreamFilterBase::requestIn
 }
 
 Tracing::Span& ConnectionManagerImpl::ActiveStreamFilterBase::activeSpan() {
-  return *parent_.active_span_;
+  if (parent_.active_span_) {
+    return *parent_.active_span_;
+  } else {
+    return Tracing::NullSpan::instance();
+  }
 }
 
 Router::RouteConstSharedPtr ConnectionManagerImpl::ActiveStreamFilterBase::route() {

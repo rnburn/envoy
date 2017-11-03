@@ -128,6 +128,20 @@ envoy_cc_test(
 )
 
 envoy_cc_test(
+    name = "load_stats_reporter_test",
+    srcs = ["load_stats_reporter_test.cc"],
+    external_deps = ["envoy_eds"],
+    deps = [
+        "//source/common/stats:stats_lib",
+        "//source/common/upstream:load_stats_reporter_lib",
+        "//test/mocks/event:event_mocks",
+        "//test/mocks/grpc:grpc_mocks",
+        "//test/mocks/upstream:upstream_mocks",
+        "//test/test_common:utility_lib",
+    ],
+)
+
+envoy_cc_test(
     name = "logical_dns_cluster_test",
     srcs = ["logical_dns_cluster_test.cc"],
     deps = [
@@ -201,6 +215,7 @@ envoy_cc_test(
     }),
     deps = [
         ":utility_lib",
+        "//include/envoy/router:router_interface",
         "//source/common/network:utility_lib",
         "//source/common/upstream:ring_hash_lb_lib",
         "//source/common/upstream:upstream_includes",
@@ -228,6 +243,21 @@ envoy_cc_test(
         "//test/mocks/upstream:upstream_mocks",
         "//test/test_common:environment_lib",
         "//test/test_common:utility_lib",
+    ],
+)
+
+envoy_cc_test(
+    name = "subset_lb_test",
+    srcs = ["subset_lb_test.cc"],
+    deps = [
+        ":utility_lib",
+        "//source/common/network:utility_lib",
+        "//source/common/upstream:load_balancer_lib",
+        "//source/common/upstream:subset_lb_lib",
+        "//source/common/upstream:upstream_includes",
+        "//source/common/upstream:upstream_lib",
+        "//test/mocks/runtime:runtime_mocks",
+        "//test/mocks/upstream:upstream_mocks",
     ],
 )
 
