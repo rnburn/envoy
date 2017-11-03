@@ -4,6 +4,7 @@
 #include <string>
 
 #include "common/common/base64.h"
+#include "common/grpc/common.h"
 #include "common/http/header_map_impl.h"
 #include "common/http/headers.h"
 #include "common/http/message_impl.h"
@@ -184,6 +185,10 @@ TEST_F(LightStepDriverTest, FlushSeveralSpans) {
       Http::HeaderMapPtr{new Http::TestHeaderMapImpl{{":status", "200"}}}));
 
   msg->trailers(Http::HeaderMapPtr{new Http::TestHeaderMapImpl{{"grpc-status", "0"}}});
+  std::unique_ptr<Protobuf::Message> collector_response =
+      lightstep::Transporter::MakeCollectorResponse();
+  EXPECT_NE(collector_response, nullptr);
+  msg->body() = Grpc::Common::serializeBody(*collector_response);
 
   callback->onSuccess(std::move(msg));
 
