@@ -69,14 +69,14 @@ void LightStepDriver::LightStepTransporter::onSuccess(Http::MessagePtr&& respons
   } catch (const Grpc::Exception& ex) {
     Grpc::Common::chargeStat(*driver_.cluster(), lightstep::CollectorServiceFullName(),
                              lightstep::CollectorMethodName(), false);
-    active_callback_->OnFailure(std::error_code());
+    active_callback_->OnFailure(std::make_error_code(std::errc::network_down));
   }
 }
 
 void LightStepDriver::LightStepTransporter::onFailure(Http::AsyncClient::FailureReason) {
   Grpc::Common::chargeStat(*driver_.cluster(), lightstep::CollectorServiceFullName(),
                            lightstep::CollectorMethodName(), false);
-  active_callback_->OnFailure(std::error_code());
+  active_callback_->OnFailure(std::make_error_code(std::errc::network_down));
 }
 
 LightStepDriver::LightStepMetricsObserver::LightStepMetricsObserver(LightStepDriver& driver)
@@ -131,6 +131,7 @@ LightStepDriver::LightStepDriver(const Json::Object& config,
     tls_options.access_token = options_->access_token;
     tls_options.component_name = options_->component_name;
     tls_options.use_thread = false;
+    tls_options.use_single_key_propagation = true;
     tls_options.logger_sink = LightStepLogger{};
     tls_options.max_buffered_spans = std::function<size_t()>{[this] {
       auto result = runtime_.snapshot().getInteger("tracing.lightstep.min_flush_spans", 5U);
