@@ -275,10 +275,10 @@ def com_github_opentracing_opentracing_cpp(repository = ""):
   genrule_repository(
       name = "com_github_opentracing_opentracing_cpp",
       urls = [
-          "https://github.com/opentracing/opentracing-cpp/archive/v1.0.0.tar.gz",
+          "https://github.com/opentracing/opentracing-cpp/archive/v1.1.0.tar.gz",
       ],
-      sha256 = "9543f66790ba65810869a29b3aaef5286f1c446cb498a304d0d8b153c289cae8",
-      strip_prefix = "opentracing-cpp-1.0.0",
+      sha256 = "1ca9c57fa9fc7fdb6adc8a21c7635fa242c92e8b7ee41324714cc0dca30a8e3f",
+      strip_prefix = "opentracing-cpp-1.1.0",
       genrule_cmd_file = repository + "//bazel/external:opentracing.genrule_cmd",
       build_file = repository + "//bazel/external:opentracing.BUILD",
   )
