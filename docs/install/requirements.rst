@@ -18,7 +18,7 @@ Envoy has the following requirements:
 * `gperftools <https://github.com/gperftools/gperftools>`_ (last tested with 2.6.1)
 * `http-parser <https://github.com/nodejs/http-parser>`_ (last tested with 2.7.1)
 * `libevent <http://libevent.org/>`_ (last tested with 2.1.8)
-* `opentracing-cpp <https://github.com/opentracing/opentracing-cpp>`_ (last tested with 1.0.0)
+* `opentracing-cpp <https://github.com/opentracing/opentracing-cpp>`_ (last tested with 1.1.0)
 * `lightstep-tracer-cpp <https://github.com/lightstep/lightstep-tracer-cpp/>`_ (last tested with 0.4.0)
 * `luajit <http://luajit.org/>`_ (last tested with 2.0.5)
 * `nghttp2 <https://github.com/nghttp2/nghttp2>`_ (last tested with 1.25.0)
