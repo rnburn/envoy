@@ -34,6 +34,21 @@ public:
       OpenTracingCb;
 
   // opentracing::HTTPHeadersReader
+  opentracing::expected<opentracing::string_view>
+  LookupKey(opentracing::string_view key) const override {
+    const Http::HeaderEntry* entry;
+    Http::HeaderMap::Lookup lookup_result =
+        request_headers_.lookup(Http::LowerCaseString{key}, &entry);
+    switch (lookup_result) {
+    case Http::HeaderMap::Lookup::Found:
+      return opentracing::string_view{entry->value().c_str(), entry->value().size()};
+    case Http::HeaderMap::Lookup::NotFound:
+      return opentracing::make_unexpected(opentracing::key_not_found_error);
+    case Http::HeaderMap::Lookup::NotSupported:
+      return opentracing::make_unexpected(opentracing::lookup_key_not_supported_error);
+    }
+  }
+
   opentracing::expected<void> ForeachKey(OpenTracingCb f) const override {
     request_headers_.iterate(header_map_callback, static_cast<void*>(&f));
     return {};
