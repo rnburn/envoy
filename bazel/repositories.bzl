@@ -292,10 +292,10 @@ def com_github_lightstep_lightstep_tracer_cpp(repository = ""):
   genrule_repository(
       name = "com_github_lightstep_lightstep_tracer_cpp",
       urls = [
-          "https://github.com/rnburn/lightstep-tracer-cpp/archive/v0.5.8.tar.gz",
+          "https://github.com/rnburn/lightstep-tracer-cpp/archive/v0.5.9.tar.gz",
       ],
-      sha256 = "da543a0d833a592e9e496fcc64cace25334048f92fe0113409ca22f9a5b9dc35",
-      strip_prefix = "lightstep-tracer-cpp-0.5.8",
+      sha256 = "b1b312b8407aa0e2c0be73cbe055e4b418370946bfa8946b90b18696146baa03",
+      strip_prefix = "lightstep-tracer-cpp-0.5.9",
       genrule_cmd_file = repository + "//bazel/external:lightstep.genrule_cmd",
       build_file = repository + "//bazel/external:lightstep.BUILD",
   )

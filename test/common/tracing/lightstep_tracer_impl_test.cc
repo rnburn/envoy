@@ -368,8 +368,8 @@ TEST_F(LightStepDriverTest, SpawnChild) {
   childViaHeaders->injectContext(base1);
   childViaSpawn->injectContext(base2);
 
-  std::string base1_context = base1.OtSpanContext()->value().c_str();
-  std::string base2_context = base2.OtSpanContext()->value().c_str();
+  std::string base1_context = Base64::decode(base1.OtSpanContext()->value().c_str());
+  std::string base2_context = Base64::decode(base2.OtSpanContext()->value().c_str());
 
   EXPECT_FALSE(base1_context.empty());
   EXPECT_FALSE(base2_context.empty());
