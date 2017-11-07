@@ -26,7 +26,7 @@ genrule_environment(
     name = "lightstep_compiler_flags",
 )
 
-# These intermediate rules lets cc_library outputs be fed into a genrule.
+# These intermediate rules let cc_library outputs be fed into a genrule.
 # Normally a cc_library creates a CcSkylarkApiProvider, but no direct
 # file outputs.
 genrule_cc_deps(
