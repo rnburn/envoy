@@ -384,7 +384,7 @@ public:
    */
   virtual void iterateReverse(ConstIterateCb cb, void* context) const PURE;
 
-  enum class Lookup { Found, NotFound, NotSupported};
+  enum class Lookup { Found, NotFound, NotSupported };
 
   /**
    * Lookup one of the O(1) headers by key.
