@@ -277,7 +277,7 @@ def com_github_opentracing_opentracing_cpp(repository = ""):
       urls = [
           "https://github.com/opentracing/opentracing-cpp/archive/v1.1.0.tar.gz",
       ],
-      sha256 = "1ca9c57fa9fc7fdb6adc8a21c7635fa242c92e8b7ee41324714cc0dca30a8e3f",
+      sha256 = "621b28eb5961d0622d5b37939b13379d75038366e3628f96cda411c8b94ac042",
       strip_prefix = "opentracing-cpp-1.1.0",
       genrule_cmd_file = repository + "//bazel/external:opentracing.genrule_cmd",
       build_file = repository + "//bazel/external:opentracing.BUILD",
@@ -294,7 +294,7 @@ def com_github_lightstep_lightstep_tracer_cpp(repository = ""):
       urls = [
           "https://github.com/lightstep/lightstep-tracer-cpp/archive/v0.5.0.tar.gz",
       ],
-      sha256 = "c42de7888ed85f49ecbf28a79be68f19d0fd9bd14f180e6dd6b3ef883c934bea",
+      sha256 = "10563addb4dee74d69809e59fd2c5377a323efa78941ab00bb4ce1402b3f1a33",
       strip_prefix = "lightstep-tracer-cpp-0.5.0",
       genrule_cmd_file = repository + "//bazel/external:lightstep.genrule_cmd",
       build_file = repository + "//bazel/external:lightstep.BUILD",
