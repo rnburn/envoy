@@ -2,6 +2,7 @@
 
 #include <sstream>
 
+#include "common/common/assert.h"
 #include "common/common/base64.h"
 
 namespace Envoy {
@@ -46,6 +47,8 @@ public:
       return opentracing::make_unexpected(opentracing::key_not_found_error);
     case Http::HeaderMap::Lookup::NotSupported:
       return opentracing::make_unexpected(opentracing::lookup_key_not_supported_error);
+    default:
+      NOT_REACHED;
     }
   }
 
