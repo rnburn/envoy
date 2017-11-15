@@ -87,10 +87,10 @@ void MainImpl::initializeTracers(const envoy::api::v2::Tracing& configuration, I
     return;
   }
 
-  if (server.localInfo().clusterName().empty()) {
-    throw EnvoyException("cluster name must be defined if tracing is enabled. See "
-                         "--service-cluster option.");
-  }
+  /* if (server.localInfo().clusterName().empty()) { */
+  /*   throw EnvoyException("cluster name must be defined if tracing is enabled. See " */
+  /*                        "--service-cluster option."); */
+  /* } */
 
   // Initialize tracing driver.
   std::string type = configuration.http().name();

@@ -19,6 +19,7 @@ DynamicOpenTracingHttpTracerFactory::createHttpTracer(const Json::Object& /*json
                                              Server::Instance& /*server*/,
                                              Upstream::ClusterManager& /*cluster_manager*/) {
 
+  std::cerr << "ArfArf" << std::endl;
   return nullptr;
   /* std::unique_ptr<lightstep::LightStepTracerOptions> opts(new lightstep::LightStepTracerOptions()); */
   /* opts->access_token = server.api().fileReadToEnd(json_config.getString("access_token_file")); */
