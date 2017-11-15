@@ -13,10 +13,12 @@ envoy_cc_library(
     srcs = [
         "http_tracer_impl.cc",
         "opentracing_driver_impl.cc",
+        "dynamic_opentracing_driver_impl.cc",
     ],
     hdrs = [
         "http_tracer_impl.h",
         "opentracing_driver_impl.h",
+        "dynamic_opentracing_driver_impl.h",
     ],
     external_deps = ["opentracing"],
     deps = [
