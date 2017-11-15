@@ -1,6 +1,5 @@
 #include "server/config/http/dynamic_opentracing_http_tracer.h"
 
-
 #include <string>
 
 #include "envoy/registry/registry.h"
@@ -15,28 +14,24 @@ namespace Server {
 namespace Configuration {
 
 Tracing::HttpTracerPtr
-DynamicOpenTracingHttpTracerFactory::createHttpTracer(const Json::Object& /*json_config*/,
-                                             Server::Instance& /*server*/,
-                                             Upstream::ClusterManager& /*cluster_manager*/) {
-
-  std::cerr << "ArfArf" << std::endl;
-  return nullptr;
-  /* std::unique_ptr<lightstep::LightStepTracerOptions> opts(new lightstep::LightStepTracerOptions()); */
-  /* opts->access_token = server.api().fileReadToEnd(json_config.getString("access_token_file")); */
-  /* StringUtil::rtrim(opts->access_token); */
-  /* opts->component_name = server.localInfo().clusterName(); */
-
-  /* Tracing::DriverPtr lightstep_driver( */
-  /*     new Tracing::LightStepDriver(json_config, cluster_manager, server.stats(), */
-  /*                                  server.threadLocal(), server.runtime(), std::move(opts))); */
-  /* return Tracing::HttpTracerPtr( */
-  /*     new Tracing::HttpTracerImpl(std::move(lightstep_driver), server.localInfo())); */
+DynamicOpenTracingHttpTracerFactory::createHttpTracer(const Json::Object& json_config,
+                                                      Server::Instance& server,
+                                                      Upstream::ClusterManager& cluster_manager) {
+  std::string library = json_config.getString("library");
+  std::string config = server.api().fileReadToEnd(json_config.getString("config_file"));
+  Tracing::DriverPtr dynamic_driver{new Tracing::DynamicOpenTracingDriver{
+      json_config, cluster_manager, server.stats(), server.threadLocal(), server.runtime(), library,
+      config}};
+  return Tracing::HttpTracerPtr(
+      new Tracing::HttpTracerImpl(std::move(dynamic_driver), server.localInfo()));
 }
 
-std::string DynamicOpenTracingHttpTracerFactory::name() { return Config::HttpTracerNames::get().DYNAMIC; }
+std::string DynamicOpenTracingHttpTracerFactory::name() {
+  return Config::HttpTracerNames::get().DYNAMIC;
+}
 
 /**
- * Static registration for the lightstep http tracer. @see RegisterFactory.
+ * Static registration for the dynamic opentracing http tracer. @see RegisterFactory.
  */
 static Registry::RegisterFactory<DynamicOpenTracingHttpTracerFactory, HttpTracerFactory> register_;
 

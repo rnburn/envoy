@@ -15,8 +15,8 @@ class DynamicOpenTracingDriver : public OpenTracingDriver {
   DynamicOpenTracingDriver(const Json::Object& config, Upstream::ClusterManager& cluster_manager,
                            Stats::Store& stats, ThreadLocal::SlotAllocator& tls,
                            Runtime::Loader& runtime,
-                           const std::string& dynamic_library,
-                           const std::string& config_filename);
+                           const std::string& library,
+                           const std::string& tracer_config);
 
   // Tracer::OpenTracingDriver
   const opentracing::Tracer& tracer() const override { return *tracer_; }
@@ -24,6 +24,8 @@ class DynamicOpenTracingDriver : public OpenTracingDriver {
   bool useSingleHeaderPropagation() const override { return false; }
  private:
   std::shared_ptr<opentracing::Tracer> tracer_;
+
+  void loadTracer(const std::string& library, const std::string& tracer_config);
 };
 
 } // Tracing

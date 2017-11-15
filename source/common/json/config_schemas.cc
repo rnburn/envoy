@@ -1228,9 +1228,9 @@ const std::string Json::Schema::TOP_LEVEL_CONFIG_SCHEMA(R"EOF(
             "type" : "object",
             "properties" : {
               "library" : {"type" : "string"},
-              "config" : {"type" : "string"}
+              "config_file" : {"type" : "string"}
             },
-            "required": ["library", "config"],
+            "required": ["library", "config_file"],
             "additionalProperties" : false
           }
         },
