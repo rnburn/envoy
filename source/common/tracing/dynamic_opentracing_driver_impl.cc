@@ -30,7 +30,7 @@ DynamicOpenTracingDriver::DynamicOpenTracingDriver(
 void DynamicOpenTracingDriver::loadTracer(const std::string& library,
                                           const std::string& tracer_config) {
   DLHandle handle;
-  handle.handle = dlopen(library.c_str(), RTLD_NOW);
+  handle.handle = dlopen(library.c_str(), RTLD_LOCAL);
   if (handle.handle == nullptr) {
     throw EnvoyException(fmt::format("failed to load tracing library '{}'", library));
   }
