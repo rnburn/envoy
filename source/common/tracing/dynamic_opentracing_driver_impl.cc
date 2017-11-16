@@ -30,9 +30,11 @@ DynamicOpenTracingDriver::DynamicOpenTracingDriver(
 void DynamicOpenTracingDriver::loadTracer(const std::string& library,
                                           const std::string& tracer_config) {
   DLHandle handle;
+  dlerror(); // Clear any existing error.
   handle.handle = dlopen(library.c_str(), RTLD_NOW | RTLD_LOCAL);
   if (handle.handle == nullptr) {
-    throw EnvoyException(fmt::format("failed to load tracing library '{}'", library));
+    throw EnvoyException(
+        fmt::format("failed to load tracing library '{}': {}", library, dlerror()));
   }
 
   // deduce the name of the function to load from the library name
@@ -51,8 +53,8 @@ void DynamicOpenTracingDriver::loadTracer(const std::string& library,
   auto make_tracer = reinterpret_cast<int (*)(const char*, void*, void*)>(
       dlsym(handle.handle, function_name.c_str()));
   if (make_tracer == nullptr) {
-    throw EnvoyException(
-        fmt::format("failed to find tracing library function '{}'", function_name));
+    throw EnvoyException(fmt::format("failed to locate tracing library function '{}': {}",
+                                     function_name, dlerror()));
   }
   std::string error_message;
   int rcode = make_tracer(tracer_config.c_str(), static_cast<void*>(&tracer_),
