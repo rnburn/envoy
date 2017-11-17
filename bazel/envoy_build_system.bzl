@@ -57,8 +57,6 @@ def envoy_linkopts():
             # --build-id and avoid doing the following.
             '-Wl,--build-id=md5',
             '-Wl,--hash-style=gnu',
-            "-static-libstdc++",
-            "-static-libgcc",
         ],
     })
 
