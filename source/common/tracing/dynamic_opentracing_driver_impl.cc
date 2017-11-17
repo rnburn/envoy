@@ -29,7 +29,7 @@ DynamicOpenTracingDriver::DynamicOpenTracingDriver(
 
 void DynamicOpenTracingDriver::loadTracer(const std::string& library,
                                           const std::string& tracer_config) {
-  DLHandle handle;
+  static DLHandle handle;
   dlerror(); // Clear any existing error.
   handle.handle = dlopen(library.c_str(), RTLD_NOW | RTLD_LOCAL);
   if (handle.handle == nullptr) {
