@@ -17,7 +17,9 @@ public:
   // opentracing::HTTPHeadersWriter
   opentracing::expected<void> Set(opentracing::string_view key,
                                   opentracing::string_view value) const override {
-    request_headers_.addCopy(Http::LowerCaseString{key}, value);
+    Http::LowerCaseString lc_key{key};
+    request_headers_.remove(lc_key);
+    request_headers_.addCopy(std::move(lc_key), value);
     return {};
   }
 
