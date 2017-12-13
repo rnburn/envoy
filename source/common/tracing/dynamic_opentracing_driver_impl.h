@@ -6,6 +6,7 @@
 #include "envoy/upstream/cluster_manager.h"
 
 #include "common/tracing/opentracing_driver_impl.h"
+#include "opentracing/dynamic_load.h"
 
 namespace Envoy {
 namespace Tracing {
@@ -23,9 +24,8 @@ class DynamicOpenTracingDriver : public OpenTracingDriver {
   bool useTracerPropagation() const override { return true; }
   bool useSingleHeaderPropagation() const override { return false; }
  private:
-  std::shared_ptr<opentracing::Tracer> tracer_;
-
-  void loadTracer(const std::string& library, const std::string& tracer_config);
+   opentracing::DynamicTracingLibraryHandle library_handle_;
+   std::shared_ptr<opentracing::Tracer> tracer_;
 };
 
 } // Tracing

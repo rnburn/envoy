@@ -7,62 +7,34 @@
 namespace Envoy {
 namespace Tracing {
 
-namespace {
-struct DLHandle {
-  void* handle = nullptr;
-
-  ~DLHandle() {
-    if (handle != nullptr) {
-      dlclose(handle);
-    }
-  }
-};
-}  // anonymous namespace
-
 DynamicOpenTracingDriver::DynamicOpenTracingDriver(
     const Json::Object& /*config*/, Upstream::ClusterManager& /*cluster_manager*/, Stats::Store& /*stats*/,
     ThreadLocal::SlotAllocator& /*tls*/, Runtime::Loader& /*runtime*/, const std::string& library,
     const std::string& tracer_config) 
 {
-  loadTracer(library, tracer_config);
-}
-
-void DynamicOpenTracingDriver::loadTracer(const std::string& library,
-                                          const std::string& tracer_config) {
-  static DLHandle handle;
-  dlerror(); // Clear any existing error.
-  handle.handle = dlopen(library.c_str(), RTLD_NOW | RTLD_LOCAL);
-  if (handle.handle == nullptr) {
-    throw EnvoyException(
-        fmt::format("failed to load tracing library '{}': {}", library, dlerror()));
-  }
-
-  // deduce the name of the function to load from the library name
-  size_t name_first = 0;
-  size_t name_last = library.size();
-  const size_t last_slash = library.find_last_of('/');
-  if (last_slash != std::string::npos)
-    name_first = last_slash+1;
-  const size_t dot_position = library.find('.', name_first);
-  if (dot_position != std::string::npos)
-    name_last = dot_position;
-  auto function_name =
-      fmt::format("make_{}_tracer", library.substr(name_first, name_last - name_first));
-
-  dlerror(); // Clear any existing error.
-  auto make_tracer = reinterpret_cast<int (*)(const char*, void*, void*)>(
-      dlsym(handle.handle, function_name.c_str()));
-  if (make_tracer == nullptr) {
-    throw EnvoyException(fmt::format("failed to locate tracing library function '{}': {}",
-                                     function_name, dlerror()));
-  }
   std::string error_message;
-  int rcode = make_tracer(tracer_config.c_str(), static_cast<void*>(&tracer_),
-                          static_cast<void*>(&error_message));
-  if (rcode != 0) {
-    throw EnvoyException(
-        fmt::format("failed to construct tracer: '{}'", error_message));
+  opentracing::expected<opentracing::DynamicTracingLibraryHandle> library_handle_maybe =
+      opentracing::dynamically_load_tracing_library(library.c_str(), error_message);
+  if (!library_handle_maybe) {
+    if (error_message.empty()) {
+      throw EnvoyException{fmt::format("{}", library_handle_maybe.error().message())};
+    } else {
+      throw EnvoyException{
+          fmt::format("{}: {}", library_handle_maybe.error().message(), error_message)};
+    }
   }
+  library_handle_ = std::move(*library_handle_maybe);
+
+  opentracing::expected<std::shared_ptr<opentracing::Tracer>> tracer_maybe =
+      library_handle_.tracer_factory().MakeTracer(tracer_config.c_str(), error_message);
+  if (!tracer_maybe) {
+    if (error_message.empty()) {
+      throw EnvoyException{fmt::format("{}", tracer_maybe.error().message())};
+    } else {
+      throw EnvoyException{fmt::format("{}: {}", tracer_maybe.error().message(), error_message)};
+    }
+  }
+  tracer_ = std::move(*tracer_maybe);
   RELEASE_ASSERT(tracer_ != nullptr);
 }
 

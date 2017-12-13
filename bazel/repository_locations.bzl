@@ -26,8 +26,8 @@ REPOSITORY_LOCATIONS = dict(
         remote = "https://github.com/gcovr/gcovr",
     ),
     io_opentracing_cpp = dict(
-        commit = "550c686e0e174c845a034f432a6c31a808f5f994",
-        remote = "https://github.com/opentracing/opentracing-cpp",
+        commit = "931b23967f155c022d53a767302ff594a5a9c3f0",
+        remote = "https://github.com/rnburn/opentracing-cpp",
     ),
     com_github_lightstep_lightstep_tracer_cpp = dict(
         commit = "deb5284395075028c3e5b4eab1416fe1e597bdb7",
