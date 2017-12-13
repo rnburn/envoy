@@ -41,17 +41,17 @@ class LightStepDriver : public OpenTracingDriver {
 public:
   LightStepDriver(const Json::Object& config, Upstream::ClusterManager& cluster_manager,
                   Stats::Store& stats, ThreadLocal::SlotAllocator& tls, Runtime::Loader& runtime,
-                  std::unique_ptr<lightstep::LightStepTracerOptions>&& options);
-
-  // Tracer::OpenTracingDriver
-  const opentracing::Tracer& tracer() const override;
-  bool useTracerPropagation() const override { return true; }
-  bool useSingleHeaderPropagation() const override { return false; }
+                  std::unique_ptr<lightstep::LightStepTracerOptions>&& options,
+                  PropagationMode propagation_mode);
 
   Upstream::ClusterManager& clusterManager() { return cm_; }
   Upstream::ClusterInfoConstSharedPtr cluster() { return cluster_; }
   Runtime::Loader& runtime() { return runtime_; }
   LightstepTracerStats& tracerStats() { return tracer_stats_; }
+
+  // Tracer::OpenTracingDriver
+  const opentracing::Tracer& tracer() const override;
+  PropagationMode propagationMode() const override { return propagation_mode_; }
 
 private:
   class LightStepTransporter : public lightstep::AsyncTransporter, Http::AsyncClient::Callbacks {
@@ -84,7 +84,7 @@ private:
 
   class TlsLightStepTracer : public ThreadLocal::ThreadLocalObject {
   public:
-    TlsLightStepTracer(std::shared_ptr<lightstep::LightStepTracer>&& tracer,
+    TlsLightStepTracer(const std::shared_ptr<lightstep::LightStepTracer>& tracer,
                        LightStepDriver& driver, Event::Dispatcher& dispatcher);
 
     const opentracing::Tracer& tracer() const;
@@ -103,6 +103,7 @@ private:
   ThreadLocal::SlotPtr tls_;
   Runtime::Loader& runtime_;
   std::unique_ptr<lightstep::LightStepTracerOptions> options_;
+  const PropagationMode propagation_mode_;
 };
 
 } // Tracing

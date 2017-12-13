@@ -39,7 +39,9 @@ namespace Tracing {
 
 class LightStepDriverTest : public Test {
 public:
-  void setup(Json::Object& config, bool init_timer) {
+  void setup(Json::Object& config, bool init_timer,
+             OpenTracingDriver::PropagationMode propagation_mode =
+                 OpenTracingDriver::PropagationMode::TracerNative) {
     std::unique_ptr<lightstep::LightStepTracerOptions> opts(
         new lightstep::LightStepTracerOptions());
     opts->access_token = "sample_token";
@@ -53,10 +55,12 @@ public:
       EXPECT_CALL(*timer_, enableTimer(std::chrono::milliseconds(1000)));
     }
 
-    driver_.reset(new LightStepDriver(config, cm_, stats_, tls_, runtime_, std::move(opts)));
+    driver_.reset(new LightStepDriver{config, cm_, stats_, tls_, runtime_, std::move(opts),
+                                      propagation_mode});
   }
 
-  void setupValidDriver() {
+  void setupValidDriver(OpenTracingDriver::PropagationMode propagation_mode =
+                            OpenTracingDriver::PropagationMode::TracerNative) {
     EXPECT_CALL(cm_, get("fake_cluster")).WillRepeatedly(Return(&cm_.thread_local_cluster_));
     ON_CALL(*cm_.thread_local_cluster_.cluster_.info_, features())
         .WillByDefault(Return(Upstream::ClusterInfo::Features::HTTP2));
@@ -66,7 +70,7 @@ public:
     )EOF";
     Json::ObjectSharedPtr loader = Json::Factory::loadFromString(valid_config);
 
-    setup(*loader, true);
+    setup(*loader, true, propagation_mode);
   }
 
   const std::string operation_name_{"test"};
@@ -317,39 +321,45 @@ TEST_F(LightStepDriverTest, FlushOneSpanGrpcFailure) {
 }
 
 TEST_F(LightStepDriverTest, SerializeAndDeserializeContext) {
-  setupValidDriver();
+  for (OpenTracingDriver::PropagationMode propagation_mode :
+       {OpenTracingDriver::PropagationMode::SingleHeader,
+        OpenTracingDriver::PropagationMode::TracerNative}) {
+    setupValidDriver(propagation_mode);
 
-  // Supply bogus context, that will be simply ignored.
-  const std::string invalid_context = "notvalidcontext";
-  request_headers_.insertOtSpanContext().value(invalid_context);
-  driver_->startSpan(config_, request_headers_, operation_name_, start_time_);
+    // Supply bogus context, that will be simply ignored.
+    const std::string invalid_context = "notvalidcontext";
+    request_headers_.insertOtSpanContext().value(invalid_context);
+    stats_.counter("tracing.opentracing.span_context_extraction_error").reset();
+    driver_->startSpan(config_, request_headers_, operation_name_, start_time_);
+    EXPECT_EQ(1U, stats_.counter("tracing.opentracing.span_context_extraction_error").value());
 
-  std::string injected_ctx = request_headers_.OtSpanContext()->value().c_str();
-  EXPECT_FALSE(injected_ctx.empty());
+    std::string injected_ctx = request_headers_.OtSpanContext()->value().c_str();
+    EXPECT_FALSE(injected_ctx.empty());
 
-  // Supply empty context.
-  request_headers_.removeOtSpanContext();
-  SpanPtr span = driver_->startSpan(config_, request_headers_, operation_name_, start_time_);
+    // Supply empty context.
+    request_headers_.removeOtSpanContext();
+    SpanPtr span = driver_->startSpan(config_, request_headers_, operation_name_, start_time_);
 
-  EXPECT_EQ(nullptr, request_headers_.OtSpanContext());
-  span->injectContext(request_headers_);
+    EXPECT_EQ(nullptr, request_headers_.OtSpanContext());
+    span->injectContext(request_headers_);
 
-  injected_ctx = request_headers_.OtSpanContext()->value().c_str();
-  EXPECT_FALSE(injected_ctx.empty());
+    injected_ctx = request_headers_.OtSpanContext()->value().c_str();
+    EXPECT_FALSE(injected_ctx.empty());
 
-  // Context can be parsed fine.
-  const opentracing::Tracer& tracer = driver_->tracer();
-  std::string context = Base64::decode(injected_ctx);
-  std::istringstream iss{context, std::ios::binary};
-  EXPECT_TRUE(tracer.Extract(iss));
+    // Context can be parsed fine.
+    const opentracing::Tracer& tracer = driver_->tracer();
+    std::string context = Base64::decode(injected_ctx);
+    std::istringstream iss{context, std::ios::binary};
+    EXPECT_TRUE(tracer.Extract(iss));
 
-  // Supply parent context, request_headers has properly populated x-ot-span-context.
-  SpanPtr span_with_parent =
-      driver_->startSpan(config_, request_headers_, operation_name_, start_time_);
-  request_headers_.removeOtSpanContext();
-  span_with_parent->injectContext(request_headers_);
-  injected_ctx = request_headers_.OtSpanContext()->value().c_str();
-  EXPECT_FALSE(injected_ctx.empty());
+    // Supply parent context, request_headers has properly populated x-ot-span-context.
+    SpanPtr span_with_parent =
+        driver_->startSpan(config_, request_headers_, operation_name_, start_time_);
+    request_headers_.removeOtSpanContext();
+    span_with_parent->injectContext(request_headers_);
+    injected_ctx = request_headers_.OtSpanContext()->value().c_str();
+    EXPECT_FALSE(injected_ctx.empty());
+  }
 }
 
 TEST_F(LightStepDriverTest, SpawnChild) {

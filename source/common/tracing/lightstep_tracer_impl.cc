@@ -42,6 +42,7 @@ LightStepDriver::LightStepTransporter::LightStepTransporter(LightStepDriver& dri
 void LightStepDriver::LightStepTransporter::Send(const Protobuf::Message& request,
                                                  Protobuf::Message& response,
                                                  lightstep::AsyncTransporter::Callback& callback) {
+  // TODO(rnburn): Update to use Grpc::AsyncClient when it supports abstract message classes.
   active_callback_ = &callback;
   active_response_ = &response;
 
@@ -92,9 +93,9 @@ void LightStepDriver::LightStepMetricsObserver::OnSpansSent(int num_spans) {
 }
 
 LightStepDriver::TlsLightStepTracer::TlsLightStepTracer(
-    std::shared_ptr<lightstep::LightStepTracer>&& tracer, LightStepDriver& driver,
+    const std::shared_ptr<lightstep::LightStepTracer>& tracer, LightStepDriver& driver,
     Event::Dispatcher& dispatcher)
-    : tracer_(std::move(tracer)), driver_(driver) {
+    : tracer_{tracer}, driver_{driver} {
   flush_timer_ = dispatcher.createTimer([this]() -> void {
     driver_.tracerStats().timer_flushed_.inc();
     tracer_->Flush();
@@ -115,10 +116,12 @@ void LightStepDriver::TlsLightStepTracer::enableTimer() {
 LightStepDriver::LightStepDriver(const Json::Object& config,
                                  Upstream::ClusterManager& cluster_manager, Stats::Store& stats,
                                  ThreadLocal::SlotAllocator& tls, Runtime::Loader& runtime,
-                                 std::unique_ptr<lightstep::LightStepTracerOptions>&& options)
-    : cm_(cluster_manager), tracer_stats_{LIGHTSTEP_TRACER_STATS(
-                                POOL_COUNTER_PREFIX(stats, "tracing.lightstep."))},
-      tls_(tls.allocateSlot()), runtime_(runtime), options_(std::move(options)) {
+                                 std::unique_ptr<lightstep::LightStepTracerOptions>&& options,
+                                 PropagationMode propagation_mode)
+    : OpenTracingDriver{stats}, cm_{cluster_manager},
+      tracer_stats_{LIGHTSTEP_TRACER_STATS(POOL_COUNTER_PREFIX(stats, "tracing.lightstep."))},
+      tls_{tls.allocateSlot()}, runtime_{runtime}, options_{std::move(options)},
+      propagation_mode_{propagation_mode} {
   Upstream::ThreadLocalCluster* cluster = cm_.get(config.getString("collector_cluster"));
   if (!cluster) {
     throw EnvoyException(fmt::format("{} collector cluster is not defined on cluster manager level",
@@ -146,7 +149,7 @@ LightStepDriver::LightStepDriver(const Json::Object& config,
         lightstep::MakeLightStepTracer(std::move(tls_options));
 
     return ThreadLocal::ThreadLocalObjectSharedPtr{
-        new TlsLightStepTracer(std::move(tracer), *this, dispatcher)};
+        new TlsLightStepTracer{tracer, *this, dispatcher}};
   });
 }
 

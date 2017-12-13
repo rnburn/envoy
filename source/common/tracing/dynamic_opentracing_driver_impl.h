@@ -21,11 +21,14 @@ class DynamicOpenTracingDriver : public OpenTracingDriver {
 
   // Tracer::OpenTracingDriver
   const opentracing::Tracer& tracer() const override { return *tracer_; }
-  bool useTracerPropagation() const override { return true; }
-  bool useSingleHeaderPropagation() const override { return false; }
- private:
-   opentracing::DynamicTracingLibraryHandle library_handle_;
-   std::shared_ptr<opentracing::Tracer> tracer_;
+
+  PropagationMode propagationMode() const override {
+    return OpenTracingDriver::PropagationMode::TracerNative;
+  }
+
+private:
+  opentracing::DynamicTracingLibraryHandle library_handle_;
+  std::shared_ptr<opentracing::Tracer> tracer_;
 };
 
 } // Tracing

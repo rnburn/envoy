@@ -8,9 +8,10 @@ namespace Envoy {
 namespace Tracing {
 
 DynamicOpenTracingDriver::DynamicOpenTracingDriver(
-    const Json::Object& /*config*/, Upstream::ClusterManager& /*cluster_manager*/, Stats::Store& /*stats*/,
+    const Json::Object& /*config*/, Upstream::ClusterManager& /*cluster_manager*/, Stats::Store& stats,
     ThreadLocal::SlotAllocator& /*tls*/, Runtime::Loader& /*runtime*/, const std::string& library,
     const std::string& tracer_config) 
+  : OpenTracingDriver{stats}
 {
   std::string error_message;
   opentracing::expected<opentracing::DynamicTracingLibraryHandle> library_handle_maybe =
