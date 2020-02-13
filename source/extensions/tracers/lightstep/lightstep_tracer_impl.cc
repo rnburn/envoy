@@ -56,7 +56,7 @@ LightStepDriver::LightStepTransporter::~LightStepTransporter() {
 
 void LightStepDriver::LightStepTransporter::Send(const Protobuf::Message& request,
                                                  Protobuf::Message& response,
-                                                 lightstep::AsyncTransporter::Callback& callback) {
+                                                 lightstep::LegacyAsyncTransporter::Callback& callback) {
   // TODO(rnburn): Update to use Grpc::AsyncClient when it supports abstract message classes.
   active_callback_ = &callback;
   active_response_ = &response;
@@ -107,7 +107,7 @@ void LightStepDriver::LightStepTransporter::onFailure(Http::AsyncClient::Failure
 LightStepDriver::LightStepMetricsObserver::LightStepMetricsObserver(LightStepDriver& driver)
     : driver_(driver) {}
 
-void LightStepDriver::LightStepMetricsObserver::OnSpansSent(int num_spans) {
+void LightStepDriver::LightStepMetricsObserver::OnSpansSent(int num_spans) noexcept {
   driver_.tracerStats().spans_sent_.add(num_spans);
 }
 

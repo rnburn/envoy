@@ -129,9 +129,13 @@ REPOSITORY_LOCATIONS = dict(
         urls = ["https://github.com/opentracing/opentracing-cpp/archive/v1.5.1.tar.gz"],
     ),
     com_lightstep_tracer_cpp = dict(
-        sha256 = "defbf471facfebde6523ca1177529b63784893662d4ef2c60db074be8aef0634",
-        strip_prefix = "lightstep-tracer-cpp-0.8.0",
-        urls = ["https://github.com/lightstep/lightstep-tracer-cpp/archive/v0.8.0.tar.gz"],
+        # sha256 = "defbf471facfebde6523ca1177529b63784893662d4ef2c60db074be8aef0634",
+        # strip_prefix = "lightstep-tracer-cpp-0.8.0",
+        # urls = ["https://github.com/lightstep/lightstep-tracer-cpp/archive/v0.8.0.tar.gz"],
+
+        strip_prefix = "lightstep-tracer-cpp-3c17a2399b2cf14783905f2c0101daee4f6b03fb",
+        sha256 = "dc273992d2477c1ee168fcbc8be3f5b1502fb0c0f7ee71a3107513e5888c30cf",
+        urls = ["https://github.com/rnburn/lightstep-tracer-cpp/archive/3c17a2399b2cf14783905f2c0101daee4f6b03fb.tar.gz"],
     ),
     com_github_datadog_dd_opentracing_cpp = dict(
         sha256 = "052fd37cd698e24ab73ee18fc3fa55acd1d43153c12a0e65b0fba0447de1117e",

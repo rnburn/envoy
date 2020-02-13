@@ -71,15 +71,16 @@ public:
   PropagationMode propagationMode() const override { return propagation_mode_; }
 
 private:
-  class LightStepTransporter : public lightstep::AsyncTransporter, Http::AsyncClient::Callbacks {
+  class LightStepTransporter : public lightstep::LegacyAsyncTransporter,
+                               Http::AsyncClient::Callbacks {
   public:
     explicit LightStepTransporter(LightStepDriver& driver);
 
     ~LightStepTransporter() override;
 
-    // lightstep::AsyncTransporter
+    // lightstep::LegacyAsyncTransporter
     void Send(const Protobuf::Message& request, Protobuf::Message& response,
-              lightstep::AsyncTransporter::Callback& callback) override;
+              lightstep::LegacyAsyncTransporter::Callback& callback) override;
 
     // Http::AsyncClient::Callbacks
     void onSuccess(Http::MessagePtr&& response) override;
@@ -87,7 +88,7 @@ private:
 
   private:
     Http::AsyncClient::Request* active_request_ = nullptr;
-    lightstep::AsyncTransporter::Callback* active_callback_ = nullptr;
+    lightstep::LegacyAsyncTransporter::Callback* active_callback_ = nullptr;
     Protobuf::Message* active_response_ = nullptr;
     LightStepDriver& driver_;
   };
@@ -96,7 +97,7 @@ private:
   public:
     explicit LightStepMetricsObserver(LightStepDriver& driver);
 
-    void OnSpansSent(int num_spans) override;
+    void OnSpansSent(int num_spans) noexcept override;
 
   private:
     LightStepDriver& driver_;
