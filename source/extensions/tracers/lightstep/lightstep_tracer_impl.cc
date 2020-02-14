@@ -8,6 +8,7 @@
 #include "envoy/config/trace/v3/trace.pb.h"
 
 #include "common/buffer/zero_copy_input_stream_impl.h"
+#include "common/buffer/buffer_impl.h"
 #include "common/common/base64.h"
 #include "common/common/fmt.h"
 #include "common/config/utility.h"
@@ -21,6 +22,19 @@ namespace Envoy {
 namespace Extensions {
 namespace Tracers {
 namespace Lightstep {
+
+static Buffer::InstancePtr serializeGrpcMessage(const lightstep::BufferChain& buffer_chain) {
+  Buffer::InstancePtr body(new Buffer::OwnedImpl());
+  auto size = buffer_chain.num_bytes();
+  Buffer::RawSlice iovec;
+  body->reserve(size, &iovec, 1);
+  ASSERT(iovec.len_ >= size);
+  iovec.len_ = size;
+  buffer_chain.CopyOut(static_cast<char*>(iovec.mem_), size);
+  Grpc::Common::prependGrpcFrameHeader(*body);
+  body->commit(&iovec, 1);
+  return body;
+}
 
 void LightStepLogger::operator()(lightstep::LogLevel level,
                                  opentracing::string_view message) const {
@@ -149,12 +163,32 @@ void LightStepDriver::LightStepTransporter2::onFailure(
 }
 
 void LightStepDriver::LightStepTransporter2::OnSpanBufferFull() noexcept {
+  if (active_message_ != nullptr) {
+    return;
+  }
 }
 
 void LightStepDriver::LightStepTransporter2::Send(std::unique_ptr<lightstep::BufferChain>&& message,
                                                   Callback& callback) noexcept {
-  (void)message;
-  (void)callback;
+  active_message_ = std::move(message);
+  auto body = serializeGrpcMessage(*message);
+  (void)body;
+  active_message_fragments_.reserve(active_message_->num_fragments());
+  auto add_fragment = [](void* context, const void* data, size_t size) {
+    auto& fragments = *static_cast<std::vector<Buffer::BufferFragmentPtr>*>(context);
+    std::function<void(const void*, size_t, const Buffer::BufferFragmentImpl*)> releasor;
+    fragments.emplace_back(std::make_unique<Buffer::BufferFragmentImpl>(data, size, releasor));
+    return true;
+  };
+  active_message_->ForEachFragment(add_fragment, static_cast<void*>(&active_message_fragments_));
+  active_callback_ = &callback;
+}
+
+void LightStepDriver::LightStepTransporter2::reset() {
+  active_request_ = nullptr;
+  active_callback_ = nullptr;
+  active_message_fragments_.clear();
+  active_message_ = nullptr;
 }
 
 LightStepDriver::LightStepMetricsObserver::LightStepMetricsObserver(LightStepDriver& driver)

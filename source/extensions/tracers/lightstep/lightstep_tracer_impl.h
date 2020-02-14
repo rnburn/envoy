@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "envoy/config/trace/v3/trace.pb.h"
 #include "envoy/runtime/runtime.h"
@@ -10,6 +11,7 @@
 #include "envoy/tracing/http_tracer.h"
 #include "envoy/upstream/cluster_manager.h"
 
+#include "common/buffer/buffer_impl.h"
 #include "common/grpc/context_impl.h"
 #include "common/http/header_map_impl.h"
 #include "common/http/message_impl.h"
@@ -111,8 +113,13 @@ private:
       void onFailure(Http::AsyncClient::FailureReason failure_reason) override;
 
     private:
+      std::unique_ptr<lightstep::BufferChain> active_message_;
+      std::vector<Buffer::BufferFragmentPtr> active_message_fragments_;
+      Callback* active_callback_;
       Http::AsyncClient::Request* active_request_ = nullptr;
       LightStepDriver& driver_;
+
+      void reset();
   };
 
   class LightStepMetricsObserver : public ::lightstep::MetricsObserver {
