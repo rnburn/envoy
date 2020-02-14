@@ -127,68 +127,52 @@ LightStepDriver::LightStepTransporter2::~LightStepTransporter2() {
   }
 }
 
-void LightStepDriver::LightStepTransporter2::onSuccess(Http::MessagePtr&& response) {
-  (void)response;
-#if 0
-  try {
-    active_request_ = nullptr;
-    Grpc::Common::validateResponse(*response);
-
-    // http://www.grpc.io/docs/guides/wire.html
-    // First 5 bytes contain the message header.
-    response->body()->drain(5);
-    Buffer::ZeroCopyInputStreamImpl stream{std::move(response->body())};
-    if (!active_response_->ParseFromZeroCopyStream(&stream)) {
-      throw EnvoyException("Failed to parse LightStep collector response");
-    }
-    driver_.grpc_context_.chargeStat(*driver_.cluster(), driver_.request_names_, true);
-    active_callback_->OnSuccess();
-  } catch (const Grpc::Exception& ex) {
-    driver_.grpc_context_.chargeStat(*driver_.cluster(), driver_.request_names_, false);
-    active_callback_->OnFailure(std::make_error_code(std::errc::network_down));
-  } catch (const EnvoyException& ex) {
-    driver_.grpc_context_.chargeStat(*driver_.cluster(), driver_.request_names_, false);
-    active_callback_->OnFailure(std::make_error_code(std::errc::bad_message));
-  }
-#endif
+void LightStepDriver::LightStepTransporter2::onSuccess(Http::MessagePtr&& /*response*/) {
+  driver_.grpc_context_.chargeStat(*driver_.cluster(), driver_.request_names_, true);
+  active_callback_->OnSuccess(*active_report_);
+  reset();
 }
 
 void LightStepDriver::LightStepTransporter2::onFailure(
     Http::AsyncClient::FailureReason /*failure_reason*/) {
-#if 0
-  active_request_ = nullptr;
   driver_.grpc_context_.chargeStat(*driver_.cluster(), driver_.request_names_, false);
-  active_callback_->OnFailure(std::make_error_code(std::errc::network_down));
-#endif
+  active_callback_->OnFailure(*active_report_);
+  reset();
 }
 
 void LightStepDriver::LightStepTransporter2::OnSpanBufferFull() noexcept {
-  if (active_message_ != nullptr) {
+  if (active_report_ != nullptr) {
     return;
   }
 }
 
-void LightStepDriver::LightStepTransporter2::Send(std::unique_ptr<lightstep::BufferChain>&& message,
+void LightStepDriver::LightStepTransporter2::Send(std::unique_ptr<lightstep::BufferChain>&& report,
                                                   Callback& callback) noexcept {
-  active_message_ = std::move(message);
-  auto body = serializeGrpcMessage(*message);
-  (void)body;
-  active_message_fragments_.reserve(active_message_->num_fragments());
-  auto add_fragment = [](void* context, const void* data, size_t size) {
-    auto& fragments = *static_cast<std::vector<Buffer::BufferFragmentPtr>*>(context);
-    std::function<void(const void*, size_t, const Buffer::BufferFragmentImpl*)> releasor;
-    fragments.emplace_back(std::make_unique<Buffer::BufferFragmentImpl>(data, size, releasor));
-    return true;
-  };
-  active_message_->ForEachFragment(add_fragment, static_cast<void*>(&active_message_fragments_));
+  if (active_report_ != nullptr) {
+    callback.OnFailure(*report);
+    return;
+  }
+  active_report_ = std::move(report);
   active_callback_ = &callback;
+
+  const uint64_t timeout =
+      driver_.runtime().snapshot().getInteger("tracing.lightstep.request_timeout", 5000U);
+  Http::MessagePtr message = Grpc::Common::prepareHeaders(
+      driver_.cluster()->name(), lightstep::CollectorServiceFullName(),
+      lightstep::CollectorMethodName(), absl::optional<std::chrono::milliseconds>(timeout));
+  message->body() = serializeGrpcMessage(*active_report_);
+
+  active_request_ =
+      driver_.clusterManager()
+          .httpAsyncClientForCluster(driver_.cluster()->name())
+          .send(std::move(message), *this,
+                Http::AsyncClient::RequestOptions().setTimeout(std::chrono::milliseconds(timeout)));
 }
 
 void LightStepDriver::LightStepTransporter2::reset() {
   active_request_ = nullptr;
   active_callback_ = nullptr;
-  active_message_fragments_.clear();
-  active_message_ = nullptr;
+  active_report_ = nullptr;
 }
 
 LightStepDriver::LightStepMetricsObserver::LightStepMetricsObserver(LightStepDriver& driver)
