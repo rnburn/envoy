@@ -38,15 +38,15 @@ void LightStepLogger::operator()(lightstep::LogLevel level,
   }
 }
 
-LightStepDriver::LightStepTransporter::LightStepTransporter(LightStepDriver& driver)
-    : driver_(driver) {}
-
 // If the default min_flush_spans value is too small, the larger number of reports can overwhelm
 // LightStep's satellites. Hence, we need to choose a number that's large enough; though, it's
 // somewhat arbitrary.
 //
 // See https://github.com/lightstep/lightstep-tracer-cpp/issues/106
 const size_t LightStepDriver::DefaultMinFlushSpans = 200U;
+
+LightStepDriver::LightStepTransporter::LightStepTransporter(LightStepDriver& driver)
+    : driver_(driver) {}
 
 LightStepDriver::LightStepTransporter::~LightStepTransporter() {
   if (active_request_ != nullptr) {
@@ -102,6 +102,59 @@ void LightStepDriver::LightStepTransporter::onFailure(Http::AsyncClient::Failure
   active_request_ = nullptr;
   driver_.grpc_context_.chargeStat(*driver_.cluster(), driver_.request_names_, false);
   active_callback_->OnFailure(std::make_error_code(std::errc::network_down));
+}
+
+LightStepDriver::LightStepTransporter2::LightStepTransporter2(LightStepDriver& driver)
+    : driver_(driver) {}
+
+LightStepDriver::LightStepTransporter2::~LightStepTransporter2() {
+  if (active_request_ != nullptr) {
+    active_request_->cancel();
+  }
+}
+
+void LightStepDriver::LightStepTransporter2::onSuccess(Http::MessagePtr&& response) {
+  (void)response;
+#if 0
+  try {
+    active_request_ = nullptr;
+    Grpc::Common::validateResponse(*response);
+
+    // http://www.grpc.io/docs/guides/wire.html
+    // First 5 bytes contain the message header.
+    response->body()->drain(5);
+    Buffer::ZeroCopyInputStreamImpl stream{std::move(response->body())};
+    if (!active_response_->ParseFromZeroCopyStream(&stream)) {
+      throw EnvoyException("Failed to parse LightStep collector response");
+    }
+    driver_.grpc_context_.chargeStat(*driver_.cluster(), driver_.request_names_, true);
+    active_callback_->OnSuccess();
+  } catch (const Grpc::Exception& ex) {
+    driver_.grpc_context_.chargeStat(*driver_.cluster(), driver_.request_names_, false);
+    active_callback_->OnFailure(std::make_error_code(std::errc::network_down));
+  } catch (const EnvoyException& ex) {
+    driver_.grpc_context_.chargeStat(*driver_.cluster(), driver_.request_names_, false);
+    active_callback_->OnFailure(std::make_error_code(std::errc::bad_message));
+  }
+#endif
+}
+
+void LightStepDriver::LightStepTransporter2::onFailure(
+    Http::AsyncClient::FailureReason /*failure_reason*/) {
+#if 0
+  active_request_ = nullptr;
+  driver_.grpc_context_.chargeStat(*driver_.cluster(), driver_.request_names_, false);
+  active_callback_->OnFailure(std::make_error_code(std::errc::network_down));
+#endif
+}
+
+void LightStepDriver::LightStepTransporter2::OnSpanBufferFull() noexcept {
+}
+
+void LightStepDriver::LightStepTransporter2::Send(std::unique_ptr<lightstep::BufferChain>&& message,
+                                                  Callback& callback) noexcept {
+  (void)message;
+  (void)callback;
 }
 
 LightStepDriver::LightStepMetricsObserver::LightStepMetricsObserver(LightStepDriver& driver)

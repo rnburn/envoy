@@ -93,6 +93,28 @@ private:
     LightStepDriver& driver_;
   };
 
+  class LightStepTransporter2 : public lightstep::AsyncTransporter,
+                                 Http::AsyncClient::Callbacks {
+    public:
+      explicit LightStepTransporter2(LightStepDriver& driver);
+
+      ~LightStepTransporter2() override;
+
+      // lightstep::AsyncTransporter
+      void OnSpanBufferFull() noexcept override;
+
+      void Send(std::unique_ptr<lightstep::BufferChain>&& message,
+                Callback& callback) noexcept override;
+
+      // Http::AsyncClient::Callbacks
+      void onSuccess(Http::MessagePtr&& response) override;
+      void onFailure(Http::AsyncClient::FailureReason failure_reason) override;
+
+    private:
+      Http::AsyncClient::Request* active_request_ = nullptr;
+      LightStepDriver& driver_;
+  };
+
   class LightStepMetricsObserver : public ::lightstep::MetricsObserver {
   public:
     explicit LightStepMetricsObserver(LightStepDriver& driver);
