@@ -144,6 +144,7 @@ void LightStepDriver::LightStepTransporter2::OnSpanBufferFull() noexcept {
   if (active_report_ != nullptr) {
     return;
   }
+  driver_.flush();
 }
 
 void LightStepDriver::LightStepTransporter2::Send(std::unique_ptr<lightstep::BufferChain>&& report,
@@ -195,7 +196,7 @@ LightStepDriver::TlsLightStepTracer::TlsLightStepTracer(
   enableTimer();
 }
 
-opentracing::Tracer& LightStepDriver::TlsLightStepTracer::tracer() { return *tracer_; }
+lightstep::LightStepTracer& LightStepDriver::TlsLightStepTracer::tracer() { return *tracer_; }
 
 void LightStepDriver::TlsLightStepTracer::enableTimer() {
   const uint64_t flush_interval =
@@ -237,13 +238,21 @@ LightStepDriver::LightStepDriver(const envoy::config::trace::v3::LightstepConfig
                                             DefaultMinFlushSpans);
     }};
     tls_options.metrics_observer = std::make_unique<LightStepMetricsObserver>(*this);
-    tls_options.transporter = std::make_unique<LightStepTransporter>(*this);
+    /* tls_options.transporter = std::make_unique<LightStepTransporter>(*this); */
+    tls_options.transporter = std::make_unique<LightStepTransporter2>(*this);
     std::shared_ptr<lightstep::LightStepTracer> tracer =
         lightstep::MakeLightStepTracer(std::move(tls_options));
 
     return ThreadLocal::ThreadLocalObjectSharedPtr{
         new TlsLightStepTracer{tracer, *this, dispatcher}};
   });
+}
+
+void LightStepDriver::flush() {
+  auto& tls_tracer = tls_->getTyped<TlsLightStepTracer>();
+  tls_tracer.tracer().Flush();
+  tls_tracer.enableTimer();
+
 }
 
 opentracing::Tracer& LightStepDriver::tracer() {

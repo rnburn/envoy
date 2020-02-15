@@ -67,6 +67,8 @@ public:
 
   static const size_t DefaultMinFlushSpans;
 
+  void flush();
+
   // Tracer::OpenTracingDriver
   opentracing::Tracer& tracer() override;
   PropagationMode propagationMode() const override { return propagation_mode_; }
@@ -135,10 +137,10 @@ private:
     TlsLightStepTracer(const std::shared_ptr<lightstep::LightStepTracer>& tracer,
                        LightStepDriver& driver, Event::Dispatcher& dispatcher);
 
-    opentracing::Tracer& tracer();
+    lightstep::LightStepTracer& tracer();
 
-  private:
     void enableTimer();
+  private:
 
     std::shared_ptr<lightstep::LightStepTracer> tracer_;
     LightStepDriver& driver_;
