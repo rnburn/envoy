@@ -68,87 +68,28 @@ LightStepDriver::LightStepTransporter::~LightStepTransporter() {
   }
 }
 
-void LightStepDriver::LightStepTransporter::Send(const Protobuf::Message& request,
-                                                 Protobuf::Message& response,
-                                                 lightstep::LegacyAsyncTransporter::Callback& callback) {
-  // TODO(rnburn): Update to use Grpc::AsyncClient when it supports abstract message classes.
-  active_callback_ = &callback;
-  active_response_ = &response;
-
-  const uint64_t timeout =
-      driver_.runtime().snapshot().getInteger("tracing.lightstep.request_timeout", 5000U);
-  Http::MessagePtr message = Grpc::Common::prepareHeaders(
-      driver_.cluster()->name(), lightstep::CollectorServiceFullName(),
-      lightstep::CollectorMethodName(), absl::optional<std::chrono::milliseconds>(timeout));
-  message->body() = Grpc::Common::serializeToGrpcFrame(request);
-
-  active_request_ =
-      driver_.clusterManager()
-          .httpAsyncClientForCluster(driver_.cluster()->name())
-          .send(std::move(message), *this,
-                Http::AsyncClient::RequestOptions().setTimeout(std::chrono::milliseconds(timeout)));
-}
-
-void LightStepDriver::LightStepTransporter::onSuccess(Http::MessagePtr&& response) {
-  try {
-    active_request_ = nullptr;
-    Grpc::Common::validateResponse(*response);
-
-    // http://www.grpc.io/docs/guides/wire.html
-    // First 5 bytes contain the message header.
-    response->body()->drain(5);
-    Buffer::ZeroCopyInputStreamImpl stream{std::move(response->body())};
-    if (!active_response_->ParseFromZeroCopyStream(&stream)) {
-      throw EnvoyException("Failed to parse LightStep collector response");
-    }
-    driver_.grpc_context_.chargeStat(*driver_.cluster(), driver_.request_names_, true);
-    active_callback_->OnSuccess();
-  } catch (const Grpc::Exception& ex) {
-    driver_.grpc_context_.chargeStat(*driver_.cluster(), driver_.request_names_, false);
-    active_callback_->OnFailure(std::make_error_code(std::errc::network_down));
-  } catch (const EnvoyException& ex) {
-    driver_.grpc_context_.chargeStat(*driver_.cluster(), driver_.request_names_, false);
-    active_callback_->OnFailure(std::make_error_code(std::errc::bad_message));
-  }
-}
-
-void LightStepDriver::LightStepTransporter::onFailure(Http::AsyncClient::FailureReason) {
-  active_request_ = nullptr;
-  driver_.grpc_context_.chargeStat(*driver_.cluster(), driver_.request_names_, false);
-  active_callback_->OnFailure(std::make_error_code(std::errc::network_down));
-}
-
-LightStepDriver::LightStepTransporter2::LightStepTransporter2(LightStepDriver& driver)
-    : driver_(driver) {}
-
-LightStepDriver::LightStepTransporter2::~LightStepTransporter2() {
-  if (active_request_ != nullptr) {
-    active_request_->cancel();
-  }
-}
-
-void LightStepDriver::LightStepTransporter2::onSuccess(Http::MessagePtr&& /*response*/) {
+void LightStepDriver::LightStepTransporter::onSuccess(Http::MessagePtr&& /*response*/) {
   driver_.grpc_context_.chargeStat(*driver_.cluster(), driver_.request_names_, true);
   active_callback_->OnSuccess(*active_report_);
   reset();
 }
 
-void LightStepDriver::LightStepTransporter2::onFailure(
+void LightStepDriver::LightStepTransporter::onFailure(
     Http::AsyncClient::FailureReason /*failure_reason*/) {
   driver_.grpc_context_.chargeStat(*driver_.cluster(), driver_.request_names_, false);
   active_callback_->OnFailure(*active_report_);
   reset();
 }
 
-void LightStepDriver::LightStepTransporter2::OnSpanBufferFull() noexcept {
+void LightStepDriver::LightStepTransporter::OnSpanBufferFull() noexcept {
   if (active_report_ != nullptr) {
     return;
   }
   driver_.flush();
 }
 
-void LightStepDriver::LightStepTransporter2::Send(std::unique_ptr<lightstep::BufferChain>&& report,
-                                                  Callback& callback) noexcept {
+void LightStepDriver::LightStepTransporter::Send(std::unique_ptr<lightstep::BufferChain>&& report,
+                                                 Callback& callback) noexcept {
   if (active_report_ != nullptr) {
     callback.OnFailure(*report);
     return;
@@ -170,7 +111,7 @@ void LightStepDriver::LightStepTransporter2::Send(std::unique_ptr<lightstep::Buf
                 Http::AsyncClient::RequestOptions().setTimeout(std::chrono::milliseconds(timeout)));
 }
 
-void LightStepDriver::LightStepTransporter2::reset() {
+void LightStepDriver::LightStepTransporter::reset() {
   active_request_ = nullptr;
   active_callback_ = nullptr;
   active_report_ = nullptr;
@@ -238,8 +179,7 @@ LightStepDriver::LightStepDriver(const envoy::config::trace::v3::LightstepConfig
                                             DefaultMinFlushSpans);
     }};
     tls_options.metrics_observer = std::make_unique<LightStepMetricsObserver>(*this);
-    /* tls_options.transporter = std::make_unique<LightStepTransporter>(*this); */
-    tls_options.transporter = std::make_unique<LightStepTransporter2>(*this);
+    tls_options.transporter = std::make_unique<LightStepTransporter>(*this);
     std::shared_ptr<lightstep::LightStepTracer> tracer =
         lightstep::MakeLightStepTracer(std::move(tls_options));
 
@@ -252,7 +192,6 @@ void LightStepDriver::flush() {
   auto& tls_tracer = tls_->getTyped<TlsLightStepTracer>();
   tls_tracer.tracer().Flush();
   tls_tracer.enableTimer();
-
 }
 
 opentracing::Tracer& LightStepDriver::tracer() {

@@ -74,52 +74,29 @@ public:
   PropagationMode propagationMode() const override { return propagation_mode_; }
 
 private:
-  class LightStepTransporter : public lightstep::LegacyAsyncTransporter,
-                               Http::AsyncClient::Callbacks {
+  class LightStepTransporter : public lightstep::AsyncTransporter, Http::AsyncClient::Callbacks {
   public:
     explicit LightStepTransporter(LightStepDriver& driver);
 
     ~LightStepTransporter() override;
 
-    // lightstep::LegacyAsyncTransporter
-    void Send(const Protobuf::Message& request, Protobuf::Message& response,
-              lightstep::LegacyAsyncTransporter::Callback& callback) override;
+    // lightstep::AsyncTransporter
+    void OnSpanBufferFull() noexcept override;
+
+    void Send(std::unique_ptr<lightstep::BufferChain>&& message,
+              Callback& callback) noexcept override;
 
     // Http::AsyncClient::Callbacks
     void onSuccess(Http::MessagePtr&& response) override;
-    void onFailure(Http::AsyncClient::FailureReason) override;
+    void onFailure(Http::AsyncClient::FailureReason failure_reason) override;
 
   private:
+    std::unique_ptr<lightstep::BufferChain> active_report_;
+    Callback* active_callback_;
     Http::AsyncClient::Request* active_request_ = nullptr;
-    lightstep::LegacyAsyncTransporter::Callback* active_callback_ = nullptr;
-    Protobuf::Message* active_response_ = nullptr;
     LightStepDriver& driver_;
-  };
 
-  class LightStepTransporter2 : public lightstep::AsyncTransporter,
-                                 Http::AsyncClient::Callbacks {
-    public:
-      explicit LightStepTransporter2(LightStepDriver& driver);
-
-      ~LightStepTransporter2() override;
-
-      // lightstep::AsyncTransporter
-      void OnSpanBufferFull() noexcept override;
-
-      void Send(std::unique_ptr<lightstep::BufferChain>&& message,
-                Callback& callback) noexcept override;
-
-      // Http::AsyncClient::Callbacks
-      void onSuccess(Http::MessagePtr&& response) override;
-      void onFailure(Http::AsyncClient::FailureReason failure_reason) override;
-
-    private:
-      std::unique_ptr<lightstep::BufferChain> active_report_;
-      Callback* active_callback_;
-      Http::AsyncClient::Request* active_request_ = nullptr;
-      LightStepDriver& driver_;
-
-      void reset();
+    void reset();
   };
 
   class LightStepMetricsObserver : public ::lightstep::MetricsObserver {
@@ -140,8 +117,8 @@ private:
     lightstep::LightStepTracer& tracer();
 
     void enableTimer();
-  private:
 
+  private:
     std::shared_ptr<lightstep::LightStepTracer> tracer_;
     LightStepDriver& driver_;
     Event::TimerPtr flush_timer_;
