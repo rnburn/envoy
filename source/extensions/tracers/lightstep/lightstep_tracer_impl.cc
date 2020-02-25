@@ -31,8 +31,8 @@ static Buffer::InstancePtr serializeGrpcMessage(const lightstep::BufferChain& bu
   ASSERT(iovec.len_ >= size);
   iovec.len_ = size;
   buffer_chain.CopyOut(static_cast<char*>(iovec.mem_), size);
-  Grpc::Common::prependGrpcFrameHeader(*body);
   body->commit(&iovec, 1);
+  Grpc::Common::prependGrpcFrameHeader(*body);
   return body;
 }
 

@@ -133,9 +133,13 @@ REPOSITORY_LOCATIONS = dict(
         # strip_prefix = "lightstep-tracer-cpp-0.8.0",
         # urls = ["https://github.com/lightstep/lightstep-tracer-cpp/archive/v0.8.0.tar.gz"],
 
-        strip_prefix = "lightstep-tracer-cpp-3c17a2399b2cf14783905f2c0101daee4f6b03fb",
-        sha256 = "dc273992d2477c1ee168fcbc8be3f5b1502fb0c0f7ee71a3107513e5888c30cf",
-        urls = ["https://github.com/rnburn/lightstep-tracer-cpp/archive/3c17a2399b2cf14783905f2c0101daee4f6b03fb.tar.gz"],
+        # strip_prefix = "lightstep-tracer-cpp-3c17a2399b2cf14783905f2c0101daee4f6b03fb",
+        # sha256 = "dc273992d2477c1ee168fcbc8be3f5b1502fb0c0f7ee71a3107513e5888c30cf",
+        # urls = ["https://github.com/rnburn/lightstep-tracer-cpp/archive/3c17a2399b2cf14783905f2c0101daee4f6b03fb.tar.gz"],
+
+        strip_prefix = "lightstep-tracer-cpp-8a52016ea357a244e18abee3832c9dba9dd66120",
+        sha256 = "4bf20ff2a80f7d098a7233ccb11da5892c464242c453215641af6f54a6ca9014",
+        urls = ["https://github.com/rnburn/lightstep-tracer-cpp/archive/8a52016ea357a244e18abee3832c9dba9dd66120.tar.gz"],
     ),
     com_github_datadog_dd_opentracing_cpp = dict(
         sha256 = "052fd37cd698e24ab73ee18fc3fa55acd1d43153c12a0e65b0fba0447de1117e",
