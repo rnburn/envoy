@@ -70,10 +70,18 @@ message LightstepConfig {
   option (udpa.annotations.versioning).previous_message_type =
       "envoy.config.trace.v2.LightstepConfig";
 
+  // Available propagation modes
   enum PropagationMode {
+    // Propagate trace context in the single header x-ot-span-context.
     ENVOY = 0;
+
+    // Propagate trace context using LightStep's native format.
     LIGHTSTEP = 1;
+
+    // Propagate trace context using the b3 format.
     B3 = 2;
+
+    // Propagation trace context using the w3 trace-context standard.
     TRACE_CONTEXT = 3;
   }
 
